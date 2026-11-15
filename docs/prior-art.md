@@ -11,6 +11,8 @@
 | [agterm](https://github.com/umputun/agterm) | `c32ebec` | 2026-11-15 | ближайший по UX: сайдбар сессий, хуки статуса |
 | [herdr](https://github.com/herdrdev/herdr) | `ee5bfb5` | 2026-10-29 | плагины, детект состояний, libghostty-vt в Rust |
 | [codex](https://github.com/openai/codex) | `ee344ca` | 2026-11-15 | только `codex-rs/app-server/README.md` |
+| [qtbase](https://github.com/qt/qtbase) | `d8133df` | 2026-11-15 | только платформа `offscreen` |
+| [qtdeclarative](https://github.com/qt/qtdeclarative) | `aa3b2a9` | 2026-11-15 | только выбор бэкенда и цикла рендера |
 
 Остальные проекты (Wave, Paradev, runner, sheprd, Zed, xterm.js, Dear ImGui, ImHex, Slint, RmlUi) не клонировались: сведения о них взяты из README, документации и issue по ссылкам ниже и помечены так, где это существенно.
 
@@ -75,7 +77,7 @@ C API к ядру эмулятора Ghostty: разбор VT, экран и scr
 
 ### 2.3 Снимок
 
-`include/ghostty/vt/snapshot.h` кодирует и восстанавливает полное состояние терминала в бинарном формате. Формат версионируется отдельно и «isn't covered by the ABI promise» (`snapshot.h:31-32`). Вывод: снимок годится для передачи между процессами одной сборки, но не для хранения между версиями.
+`include/ghostty/vt/snapshot.h` кодирует и восстанавливает полное состояние терминала в бинарном формате. Формат версионируется отдельно и «isn't covered by the ABI promise» (`snapshot.h:31-32`). Терминал кодируется без continuation tracking, только если VT-парсер и декодер UTF-8 в ground-состоянии; иначе нужен `GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES`, включённый до записи, или вызов вернёт `GHOSTTY_INVALID_VALUE` (`snapshot.h:400-403`). Вывод: снимок годится для передачи между процессами одной сборки, но не для хранения между версиями.
 
 ### 2.4 Как подключают другие
 
@@ -146,6 +148,8 @@ Rust, Apache-2.0, TUI-мультиплексор с сервером, переж
 ### 5.1 Qt Quick: потоки
 
 «The threaded renderer is currently used by default on Windows with Direct3D 11 …, Linux excluding Mesa llvmpipe, macOS with Metal, mobile platforms, … and with Vulkan regardless of the platform» (https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html). Пока поток рендера рисует, GUI-поток свободен для событий и анимаций. JavaScript QML выполняется в GUI-потоке.
+
+Платформа `offscreen`, на которой идут тесты в CI, не объявляет `RhiBasedRendering` (`src/plugins/platforms/offscreen/qoffscreenintegration.cpp:358`, qtbase `d8133df`), и Qt Quick тогда выбирает программный бэкенд `software` (`src/quick/scenegraph/qsgcontextplugin.cpp:117-119`, qtdeclarative `aa3b2a9`). У программного бэкенда поток рендера включается только переменной `QSG_RENDER_LOOP=threaded` (`src/quick/scenegraph/adaptations/software/qsgsoftwareadaptation.cpp:40-50`). Вывод: без этой переменной тест кадра на `offscreen` мерит GUI-поток вместе с рендером, а гонки между ними не возникают вовсе.
 
 ### 5.2 Qt: лицензии
 
