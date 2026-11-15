@@ -11,6 +11,7 @@
 #include <QTimer>
 
 #include <signal.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <chrono>
@@ -120,6 +121,16 @@ private slots:
         QVERIFY(result);
         QCOMPARE(QDir(result->toString()).canonicalPath(),
                  QDir(Dir_->path()).canonicalPath());
+    }
+
+    void RunsInASessionOfItsOwn() {
+        const auto backend = Make();
+        backend->Start();
+        const auto pid = static_cast<pid_t>(
+            Run(*backend, "fixture.pid").value_or(0).toInteger());
+        QVERIFY(pid > 0);
+        QCOMPARE(::getsid(pid), pid);
+        QCOMPARE(::getpgid(pid), pid);
     }
 
     void ReportsItsProcessId() {
