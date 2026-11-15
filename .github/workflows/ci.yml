@@ -24,28 +24,19 @@ defaults:
     shell: bash
 
 jobs:
+  # macOS only for now; Linux joins once it is decided which Linux roost
+  # targets (design.md §14).
   test:
-    name: test (${{ matrix.os }}, ${{ matrix.preset }})
-    runs-on: ${{ matrix.os }}
+    name: test (${{ matrix.preset }})
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
         preset: [dev, asan-ubsan, release]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build tools (Linux)
-        if: runner.os == 'Linux'
-        # Qt Gui loads EGL, fontconfig and xkbcommon even under the offscreen
-        # platform.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build clang libgl1-mesa-dev libegl1 \
-            libfontconfig1 libxkbcommon0
-
-      - name: Install build tools (macOS)
-        if: runner.os == 'macOS'
+      - name: Install build tools
         run: brew install ninja
 
       - uses: jurplel/install-qt-action@v4
@@ -101,15 +92,12 @@ jobs:
 
   tidy:
     name: tidy
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build clang libgl1-mesa-dev libegl1 \
-            libfontconfig1 libxkbcommon0
+        run: brew install ninja
 
       - uses: jurplel/install-qt-action@v4
         with:
@@ -131,10 +119,13 @@ jobs:
           cmake --build --preset dev
 
       # tests/gates/ holds deliberate violations; the gates job owns them.
+      # The PyPI clang-tidy does not know where the macOS SDK is.
       - name: Naming and the static analyser
         run: |
+          sdk=$(xcrun --show-sdk-path)
           find src tests -name '*.cpp' -not -path 'tests/gates/*' | sort |
-            xargs -P "$(nproc)" -n 1 clang-tidy -p build/dev --quiet --warnings-as-errors='*'
+            xargs -P "$(sysctl -n hw.ncpu)" -n 1 clang-tidy -p build/dev --quiet \
+              --warnings-as-errors='*' "--extra-arg=-isysroot$sdk"
 
   gates:
     name: gates

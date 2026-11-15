@@ -8,7 +8,7 @@
 
 | Этап | Что |
 |---|---|
-| M0 | каркас: CMake с пресетами, Qt 6, сборка libghostty-vt, пустые `roost` и `roostd`, CI на macOS и Linux с гейтами format и tidy |
+| M0 | каркас: CMake с пресетами, Qt 6, сборка libghostty-vt, пустые `roost` и `roostd`, CI на macOS с гейтами format и tidy; Linux в CI — после решения, какой Linux |
 | M1 | `roostd`: JSON-RPC на unix-сокете, шина событий, хранилище, загрузчик плагинов с бэкенд-процессами |
 | M2 | PTY, тёплый пул `claude attach`, каналы сессий в протоколе, адаптер Claude: сессии из `claude agents --json`, состояния |
 | M3 | терминал в окне: `TerminalSession`, поток ввода-вывода, рендер, `TerminalItem`, ввод и размер |
