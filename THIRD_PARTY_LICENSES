@@ -1,0 +1,49 @@
+Third-party code in the shipped binaries
+========================================
+
+libghostty-vt
+-------------
+https://github.com/ghostty-org/ghostty
+MIT licence.
+
+Built from source with CMake FetchContent at a pinned commit and linked into
+roost and roostd. Terminal parsing and screen state; no rendering, no PTY.
+
+    MIT License
+
+    Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Qt 6
+----
+https://www.qt.io/
+LGPLv3 (Qt Core, Qt Gui, Qt Qml, Qt Quick, Qt Quick Controls, Qt Network).
+
+Linked dynamically and shipped as separate, replaceable libraries inside the
+.app bundle and the AppImage. The LGPLv3 and GPLv3 texts ship next to them.
+Qt sources: https://download.qt.io/official_releases/qt/ for the version named
+in the release notes. No GPL-only Qt module is linked.
+
+
+Not in the shipped binaries
+===========================
+
+Zig — MIT, build-time only (compiles libghostty-vt).
+Qt Test — LGPLv3, test builds only.

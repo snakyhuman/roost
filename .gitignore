@@ -1,0 +1,40 @@
+# Build
+build/
+build-*/
+out/
+cmake-build-*/
+compile_commands.json
+CMakeUserPresets.json
+
+# Qt
+*.qmlc
+*.jsc
+.qmlls.ini
+*.pro.user
+CMakeLists.txt.user*
+
+# Zig (libghostty-vt build)
+.zig-cache/
+zig-out/
+
+# Test / coverage
+*.gcda
+*.gcno
+*.profraw
+coverage/
+
+# Packaging
+*.dmg
+*.AppImage
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local agent overrides
+.claude/settings.local.json
+
+# Working copies of background agents
+.claude/worktrees/
