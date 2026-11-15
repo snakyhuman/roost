@@ -7,7 +7,21 @@ same adapter interface. Built on Qt Quick and C++, with libghostty-vt as the
 terminal emulator. Every feature is a plugin, and panels can be linked to each
 other.
 
-Status: design. Nothing to build yet; see `docs/design.md`.
+Status: skeleton. Both binaries build and start, nothing more yet; see
+`docs/design.md` for the design and the plan.
+
+## Build
+
+Needs Clang 17+ (Apple clang on macOS), CMake 3.24+, Ninja, Qt 6.8+ and
+Zig 0.17+. On macOS: `brew install cmake ninja qt zig`.
+
+```sh
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+```
+
+Binaries land in `build/dev/bin/`. Other presets: `asan-ubsan`, `release`.
 
 ## License
 
