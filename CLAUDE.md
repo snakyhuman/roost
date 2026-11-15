@@ -11,13 +11,13 @@
 | M0 | каркас: CMake с пресетами, Qt 6, сборка libghostty-vt, пустые `roost` и `roostd`, CI на macOS и Linux с гейтами format и tidy |
 | M1 | `roostd`: JSON-RPC на unix-сокете, шина событий, хранилище, загрузчик плагинов с бэкенд-процессами |
 | M2 | адаптер Claude: сессии из `claude agents --json`, состояния, тёплый пул `claude attach` в PTY |
-| M3 | `TerminalItem` на libghostty-vt: разбор в рабочем потоке, render state, ввод, снимок при открытии |
-| M4 | окно: QML-плагины, список сессий (категории, пины, архив, непрочитанные), терминал. **Рабочий продукт, паритет с cc-fleet по основному сценарию** |
+| M3 | `TerminalItem` на libghostty-vt: разбор в рабочем потоке, render state, ввод |
+| M4 | окно: QML-плагины, список сессий (категории, пины, архив, непрочитанные), терминал, импорт состояния cc-fleet. **Рабочий продукт, паритет с cc-fleet по основному сценарию** |
 | M5 | раскладка панелей со связями, keymap и палитра команд из вкладов плагинов |
-| M6 | уведомления, PR по worktree, keep-awake, импорт состояния cc-fleet |
+| M6 | уведомления, PR по worktree, keep-awake |
 | M7 | упаковка: `.dmg` и AppImage |
 
-После M7: адаптеры Codex и OpenCode, удалённый `roostd` через ssh, редактор связей, сторонний плагин как проверка API.
+Шаги и критерий готовности каждого этапа — `docs/design.md` §13. После M7: адаптеры Codex и OpenCode, удалённый `roostd` через ssh, редактор связей, сторонний плагин как проверка API.
 
 ## Документы
 
@@ -30,8 +30,8 @@
 
 - C++23, **только clang** (17+; на macOS — Apple clang из Xcode). Один компилятор — один набор диагностик.
 - Qt 6, только модули под LGPLv3: Core, Gui, Qml, Quick, Quick Controls, Network, Test. Линковка динамическая. Модули только под GPL не подключать — список в `docs/design.md`.
-- libghostty-vt — из исходников через CMake `FetchContent` на зафиксированном коммите. Нужен Zig ≥ 0.17.1.
-- Сборка только через пресеты: `cmake --preset dev`, `ctest --preset dev`. Пресеты: `dev`, `asan-ubsan`, `release`.
+- libghostty-vt — из исходников через CMake `FetchContent` на теге `vt-1.0.1`. Нужен Zig ≥ 0.17.0.
+- Сборка только через пресеты: `cmake --preset dev`, `ctest --preset dev`. Пресеты: `dev`, `asan-ubsan`, `release`, с M3 — `tsan`.
 - Форматирование — `.clang-format` (google, 4 пробела) для C++, `qmlformat` для QML. Нейминг — `.clang-tidy`, `readability-identifier-naming`.
 - Тесты: Qt Test для C++, Qt Quick Test для QML, `QT_QPA_PLATFORM=offscreen`. Тесты не трогают настоящий `~/.config/roost` и `~/.config/cc-fleet`.
 
