@@ -2,10 +2,13 @@
 # `zig build -Demit-lib-vt` and exports the imported targets ghostty-vt and
 # ghostty-vt-static. roost links the static one.
 #
-# Pinned to the tag vt-1.0.1, commit 108cacb17ed8990840cd14abfce43d8ed8503ca1.
+# Fetched by tag, which is a shallow clone; a commit hash would need the whole
+# history. When written, vt-1.0.1 pointed at 108cacb17ed8990840cd14abfce43d8ed8503ca1.
+# tests/ checks that the linked library reports this version.
 # To build against a local checkout instead:
 #   cmake --preset dev -DFETCHCONTENT_SOURCE_DIR_GHOSTTY=/path/to/ghostty
 
+set(ROOST_GHOSTTY_VT_VERSION 1.0.1)
 set(ROOST_ZIG_MIN_VERSION 0.17.0)
 
 # The wrapper would fail on a missing zig with a bare "could not find
@@ -33,7 +36,7 @@ message(STATUS "Found zig ${ROOST_ZIG_VERSION}: ${ZIG_EXECUTABLE}")
 include(FetchContent)
 FetchContent_Declare(ghostty
     GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
-    GIT_TAG vt-1.0.1
+    GIT_TAG vt-${ROOST_GHOSTTY_VT_VERSION}
     GIT_SHALLOW TRUE
     SYSTEM
 )

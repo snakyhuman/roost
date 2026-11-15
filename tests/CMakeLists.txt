@@ -26,7 +26,8 @@ set_tests_properties(roost_smoke PROPERTIES
 
 # --version names the libghostty-vt the binary actually links, read from the
 # library rather than its headers.
+string(REPLACE "." "\\." _ghostty_vt_version_regex "${ROOST_GHOSTTY_VT_VERSION}")
 add_test(NAME roostd_version COMMAND roostd --version)
 set_tests_properties(roostd_version PROPERTIES
-    PASS_REGULAR_EXPRESSION "^roostd ${PROJECT_VERSION} \\(libghostty-vt 1\\.0\\.1[^)]*\\)"
+    PASS_REGULAR_EXPRESSION "^roostd ${PROJECT_VERSION} \\(libghostty-vt ${_ghostty_vt_version_regex}[^)]*\\)"
 )

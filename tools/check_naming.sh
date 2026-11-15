@@ -47,7 +47,9 @@ for style in core qml_api; do
     if output=$(run_tidy "$rejected"); then
         echo "FAIL: $style/rejected.cpp breaks the $style style and passed"
         failed=1
-    elif ! grep -q 'readability-identifier-naming' <<<"$output"; then
+    # The diagnostic tag in brackets and the method's name: a config error
+    # also mentions readability-identifier-naming, as part of an option key.
+    elif ! grep -qE "[Ll]istSessions.*\[readability-identifier-naming[],]" <<<"$output"; then
         echo "FAIL: $style/rejected.cpp failed, but not on naming:"
         printf '%s\n' "$output" | sed 's/^/    /'
         failed=1

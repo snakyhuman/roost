@@ -12,7 +12,7 @@ Status: skeleton. Both binaries build and start, nothing more yet; see
 
 ## Build
 
-Needs Clang 17+ (Apple clang on macOS), CMake 3.24+, Ninja, Qt 6.8+ and
+Needs Clang 17+ (Apple clang on macOS), CMake 3.25+, Ninja, Qt 6.8+ and
 Zig 0.17+. On macOS: `brew install cmake ninja qt zig`.
 
 ```sh
