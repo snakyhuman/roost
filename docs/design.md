@@ -171,14 +171,14 @@ plugins/claude/
 
 ```cpp
 struct AgentAdapter {
-    virtual Capabilities capabilities() const = 0;   // backgroundDaemon, nativeTuiAttach, structuredStream
-    virtual Task<std::vector<Session>> listSessions() = 0;
-    virtual Task<SessionRef> start(const StartOptions&) = 0;
-    virtual Task<void> stop(const SessionRef&) = 0;
-    virtual std::optional<PtySpec> attachCommand(const SessionRef&) = 0;  // roostd запускает в PTY
-    virtual Task<void> send(const SessionRef&, const QString& text) = 0;
-    virtual Task<void> answerPermission(const SessionRef&, const QString& requestId, const PermissionAnswer&) = 0;
-    // сигналы: stateChanged, permissionRequested, titleChanged, usage
+    virtual Capabilities GetCapabilities() const = 0;   // backgroundDaemon, nativeTuiAttach, structuredStream
+    virtual Task<std::vector<Session>> ListSessions() = 0;
+    virtual Task<SessionRef> Start(const StartOptions&) = 0;
+    virtual Task<void> Stop(const SessionRef&) = 0;
+    virtual std::optional<PtySpec> AttachCommand(const SessionRef&) = 0;  // roostd запускает в PTY
+    virtual Task<void> Send(const SessionRef&, const QString& text) = 0;
+    virtual Task<void> AnswerPermission(const SessionRef&, const QString& requestId, const PermissionAnswer&) = 0;
+    // события: StateChanged, PermissionRequested, TitleChanged, Usage
 };
 ```
 
@@ -287,7 +287,7 @@ struct AgentAdapter {
 | 008 | Один сокет: JSON-RPC 2.0 плюс бинарные кадры PTY, без base64 |
 | 009 | Встроенные фичи на публичном API, без привилегированных путей |
 | 010 | Только модули Qt под LGPLv3, динамическая линковка, без AOT QML в v1 |
-| 011 | Функции и методы в camelCase, вопреки неймингу zet, — из-за QML |
+| 011 | C++ в стиле zet, а C++-слой для QML (`src/qml_api/`) и сам QML — в стиле QML |
 | 012 | Хуки агентов ставятся только по явному согласию пользователя |
 
 Записи, у которых разбор не влезает в строку таблицы, развёрнуты ниже.
@@ -345,12 +345,17 @@ struct AgentAdapter {
 
 **Последствия.** Два места исполнения кода плагина. Бэкенд-процесс стоит памяти, поэтому он необязателен.
 
-### ADR 011: camelCase для функций и методов
+### ADR 011: два стиля нейминга, граница — `src/qml_api/`
 
-**Контекст.** Нейминг взят из zet, где функции и методы — PascalCase. QML требует, чтобы свойства, сигналы и `Q_INVOKABLE`-методы, видимые из QML, начинались со строчной буквы: идентификатор с заглавной QML разбирает как имя типа.
+**Контекст.** Нейминг взят из zet: функции и методы — PascalCase. QML требует, чтобы имена свойств начинались со строчной буквы, а идентификатор с заглавной разбирает как тип или прикреплённое свойство; сигналы и методы в QML тоже пишутся camelCase. C++-типы, зарегистрированные в QML, отдают ему свои имена как есть.
 
-**Решение.** Функции и методы — camelCase во всём C++. Остальной нейминг — как в zet.
+**Решение.** Весь C++ — в стиле zet. Типы, которые видит QML (`QML_ELEMENT`, `QML_SINGLETON`, их `Q_PROPERTY`, сигналы, `Q_INVOKABLE`), живут в `src/qml_api/`, и там функции и методы camelCase. QML-файлы — по правилам QML. `readability-identifier-naming` берёт стиль из `.clang-tidy` каталога, где объявлен идентификатор (`GetConfigPerFile`, по умолчанию включён; `clang-tools-extra/clang-tidy/readability/IdentifierNamingCheck.cpp:1476-1499` в llvm-project `7600443571`), поэтому граница проверяется автоматически.
 
-**Альтернативы.** PascalCase для внутреннего C++ и camelCase только для видимого из QML — два стиля в одном классе и правило, которое `clang-tidy` не проверит.
+**Альтернативы.**
 
-**Последствия.** Код roost и zet расходятся в одном правиле.
+| Вариант | Почему отказ |
+|---|---|
+| camelCase во всём C++ | код расходится с zet без нужды: QML видит малую часть C++ |
+| граница по пометке (`Q_INVOKABLE`, `signals:`), а не по каталогу | `clang-tidy` не отличает эти макросы от обычных методов, правило было бы непроверяемым |
+
+**Последствия.** `src/qml_api/` — тонкий слой: классы там переводят вызовы QML в C++-ядро и не держат логики. Вспомогательные методы этих классов тоже camelCase, даже если QML их не видит.

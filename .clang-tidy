@@ -4,14 +4,16 @@
 # Requires clang-tidy 17+:  clang-tidy-20 -p build/dev <file>
 #
 # Three rules come from the project convention:
-#   classes                                PascalCase
-#   functions, methods, arguments, vars    camelCase
+#   classes, functions, methods            PascalCase
+#   arguments and variables                camelCase
 #   global constants, static constexpr     ALL_CAPS
 #
-# Functions and methods are camelCase because QML requires it:
-# properties, signals and Q_INVOKABLE methods seen from QML must start with a
-# lower-case letter, and one class should not mix two styles. Overrides of Qt
-# virtuals (updatePaintNode, event) are not checked by clang-tidy anyway.
+# The C++ layer that QML sees lives in src/qml_api/ and follows QML instead:
+# its functions and methods are camelCase (src/qml_api/.clang-tidy). The check
+# takes the style from the .clang-tidy next to where an identifier is declared
+# (GetConfigPerFile, on by default), so that layer may be included from
+# anywhere. Overrides of Qt virtuals (updatePaintNode, event) are reported only
+# at the base class, so they are never flagged here.
 #
 # The rest are gaps the convention does not mention, decided once here:
 #   enums                EPascalCase — prefix E
@@ -82,9 +84,9 @@ CheckOptions:
     value: C
 
   - key: readability-identifier-naming.FunctionCase
-    value: camelBack
+    value: CamelCase
   - key: readability-identifier-naming.MethodCase
-    value: camelBack
+    value: CamelCase
 
   - key: readability-identifier-naming.ParameterCase
     value: camelBack

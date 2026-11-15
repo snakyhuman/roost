@@ -1,0 +1,14 @@
+# The C++ that QML sees: types registered with QML_ELEMENT or QML_SINGLETON,
+# their Q_PROPERTY accessors, signals and Q_INVOKABLE methods. QML reads these
+# names as its own, and QML names properties, signals and methods camelCase;
+# an upper-case name is parsed as a type or an attached property.
+#
+# Only the function and method case differs from the root config. Members,
+# classes, enums and constants stay as everywhere else.
+InheritParentConfig: true
+
+CheckOptions:
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.MethodCase
+    value: camelBack

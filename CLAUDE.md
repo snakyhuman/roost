@@ -37,20 +37,32 @@
 
 ## Нейминг
 
+Два стиля: C++ — как в zet, QML и C++-слой, который видит QML, — как требует QML.
+
+C++ (`.clang-tidy` в корне):
+
 | Что | Как | Пример |
 |---|---|---|
-| классы | PascalCase | `SessionModel`, `TerminalItem` |
-| функции, методы, аргументы, переменные | camelCase | `listSessions`, `sessionId` |
+| классы, функции, методы | PascalCase | `SessionPool`, `ListSessions` |
+| аргументы и переменные | camelCase | `sessionId` |
 | глобальные константы, `static constexpr` члены | ALL_CAPS | `MAX_WARM_SESSIONS` |
 | члены класса | PascalCase, приватные и защищённые с `_` | `Pty_`, публичный `Id` |
 | перечисления | префикс `E` | `ESessionState`, значения `ESessionState::Blocked` |
 | концепты | префикс `C` | `CAdapter` |
 | параметры шаблонов | префикс `T` | `TValue` |
 | пространства имён | lower_case | `roost` |
-| файлы C++ | snake_case | `session_model.cpp` |
-| файлы QML | PascalCase | `SessionList.qml` |
+| файлы | snake_case | `session_pool.cpp` |
 
-Функции и методы — camelCase, а не PascalCase: свойства, сигналы и `Q_INVOKABLE`-методы, видимые из QML, обязаны начинаться со строчной буквы, а два стиля в одном классе хуже одного.
+C++-слой для QML — `src/qml_api/`: типы с `QML_ELEMENT` и `QML_SINGLETON`, их `Q_PROPERTY`, сигналы и `Q_INVOKABLE`. Функции и методы там camelCase (`listSessions`, `titleChanged`), остальное как в C++ выше. Это задаёт `src/qml_api/.clang-tidy`; стиль берётся по месту объявления, так что заголовки слоя можно включать откуда угодно. Остальной C++ в QML напрямую не регистрируется.
+
+QML (`qmllint`, `qmlformat`):
+
+| Что | Как | Пример |
+|---|---|---|
+| файлы и компоненты | PascalCase | `SessionList.qml` |
+| свойства, функции, сигналы, `id` | camelCase | `selectedSession`, `sessionOpened` |
+| обработчики сигналов | `on` + имя с заглавной | `onSessionOpened` |
+| перечисления и их значения | PascalCase | `SessionState.Blocked` |
 
 ## Чем roost не является
 
