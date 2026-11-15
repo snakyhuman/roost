@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QFuture>
 #include <QJsonValue>
 #include <QObject>
 #include <QPromise>
 #include <QString>
 
+#include <cstdint>
 #include <unordered_map>
 
 #include "core/frame.hpp"
@@ -21,8 +23,8 @@ namespace roost {
 //
 // One object is one connection: after it is lost, make a new client. Use it
 // from the thread it lives in; its futures finish there, inside its socket's
-// signal handlers, so a continuation must not delete the client (deleteLater
-// it instead).
+// signal handlers, so a continuation, or a slot of its signals, must not
+// delete the client (deleteLater it instead).
 class RpcClient : public QObject {
     Q_OBJECT
 
@@ -45,6 +47,10 @@ public:
         const QString& method,
         const QJsonValue& params = QJsonValue::Undefined);
 
+    // Input for a session channel, in as many frames as it takes. Dropped
+    // unless connected.
+    void SendInput(std::uint32_t channel, QByteArrayView bytes);
+
     // Closes the connection. Pending requests fail with ConnectionLost.
     void Disconnect();
 
@@ -52,6 +58,10 @@ public:
 
 signals:
     void NotificationReceived(const QString& method, const QJsonValue& params);
+    // Frames of session channels (design.md §4). roostd sending input, or a
+    // channel frame without a channel number, loses the connection.
+    void OutputReceived(std::uint32_t channel, const QByteArray& bytes);
+    void SnapshotReceived(std::uint32_t channel, const QByteArray& bytes);
     // Once, after the pending requests have failed.
     void Disconnected(const QString& reason);
 

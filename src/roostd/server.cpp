@@ -61,14 +61,15 @@ class Connection : public QObject {
 
 public:
     Connection(QLocalSocket* socket, const rpc::Dispatcher& dispatcher,
-               EventBus& bus, QObject* parent)
-        : QObject(parent), Socket_(socket), Dispatcher_(dispatcher), Bus_(bus) {
+               EventBus& bus, Server::ConnectionId id, QObject* parent)
+        : QObject(parent),
+          Socket_(socket),
+          Dispatcher_(dispatcher),
+          Bus_(bus),
+          Id_(id) {
         Socket_->setParent(this);
         connect(Socket_, &QLocalSocket::readyRead, this, &Connection::Read);
-        connect(Socket_, &QLocalSocket::disconnected, this,
-                &QObject::deleteLater);
-        // Bytes that came with the connection, before the signal was wired.
-        Read();
+        connect(Socket_, &QLocalSocket::disconnected, this, &Connection::Shut);
     }
 
     ~Connection() override {
@@ -80,7 +81,13 @@ public:
     Connection(const Connection&) = delete;
     Connection& operator=(const Connection&) = delete;
 
+    // Once the server has wired the signals: reads the bytes that came with
+    // the connection.
+    void Start() { Read(); }
+
+    Server::ConnectionId Id() const { return Id_; }
     bool Greeted() const { return Greeted_; }
+    bool IsOpen() const { return !Closed_; }
     void Greet() { Greeted_ = true; }
 
     std::optional<EventBus::SubscriptionId> Subscribe(const QString& pattern) {
@@ -105,6 +112,24 @@ public:
         return Bus_.Unsubscribe(id);
     }
 
+    // A frame of any kind that the caller has made sure fits. False if the
+    // connection is closed, now or before.
+    bool SendFrame(const QByteArray& frame) {
+        if (Closed_) {
+            return false;
+        }
+        Socket_->write(frame);
+        if (Socket_->bytesToWrite() > Server::MAX_UNSENT_BYTES) {
+            Close(QStringLiteral("the peer does not read its messages"));
+        }
+        return !Closed_;
+    }
+
+signals:
+    void InputReceived(std::uint32_t channel, const QByteArray& bytes);
+    // Once, when the connection stops taking frames.
+    void Closed();
+
 private:
     void Read() {
         Decoder_.Feed(Socket_->readAll());
@@ -112,6 +137,18 @@ private:
             std::optional<Frame> frame = Decoder_.Next();
             if (!frame) {
                 break;
+            }
+            if (frame->Kind == EFrameKind::Input) {
+                std::optional<ChannelBody> input =
+                    DecodeChannelBody(frame->Body);
+                if (!input) {
+                    Close(QStringLiteral("an input frame without a channel"));
+                    return;
+                }
+                if (Greeted_) {
+                    emit InputReceived(input->Channel, input->Bytes);
+                }
+                continue;
             }
             if (frame->Kind != EFrameKind::Rpc) {
                 Close(QStringLiteral("frames of kind %1 are not served")
@@ -142,22 +179,28 @@ private:
                       .arg(body.size()));
             return;
         }
-        Socket_->write(*frame);
-        if (Socket_->bytesToWrite() > Server::MAX_UNSENT_BYTES) {
-            Close(QStringLiteral("the peer does not read its messages"));
-        }
+        SendFrame(*frame);
     }
 
-    // Drops the connection; the object goes once control is back in the event
-    // loop, so a caller up the stack never sees it vanish.
+    // Drops the connection.
     void Close(const QString& reason) {
         if (Closed_) {
             return;
         }
-        Closed_ = true;
         qWarning("roostd: closing a connection: %s", qUtf8Printable(reason));
+        Shut();
         Socket_->abort();
+    }
+
+    // The object goes once control is back in the event loop, so a caller up
+    // the stack never sees it vanish.
+    void Shut() {
+        if (Closed_) {
+            return;
+        }
+        Closed_ = true;
         deleteLater();
+        emit Closed();
     }
 
     QLocalSocket* Socket_;
@@ -165,6 +208,7 @@ private:
     EventBus& Bus_;
     FrameDecoder Decoder_;
     std::set<EventBus::SubscriptionId> Subscriptions_;
+    Server::ConnectionId Id_;
     bool Greeted_ = false;
     bool Closed_ = false;
 };
@@ -322,6 +366,49 @@ bool Server::Register(const QString& method, rpc::Handler handler) {
         });
 }
 
+Connection* Server::OpenConnection(ConnectionId connection) const {
+    Connection* open = Connections_.value(connection, nullptr);
+    return open != nullptr && open->IsOpen() ? open : nullptr;
+}
+
+std::optional<Server::ConnectionId> Server::ConnectionOf(
+    const QObject* peer) const {
+    const auto* connection = qobject_cast<const Connection*>(peer);
+    if (connection == nullptr || connection->parent() != this ||
+        !connection->IsOpen()) {
+        return std::nullopt;
+    }
+    return connection->Id();
+}
+
+bool Server::SendToChannel(ConnectionId connection, EFrameKind kind,
+                           std::uint32_t channel, QByteArrayView bytes) {
+    Connection* open = OpenConnection(connection);
+    if (open == nullptr) {
+        return false;
+    }
+    const std::optional<QByteArray> frame =
+        EncodeChannelFrame(kind, channel, bytes);
+    return frame && open->SendFrame(*frame);
+}
+
+bool Server::Notify(ConnectionId connection, const QString& method,
+                    const QJsonValue& params) {
+    Connection* open = OpenConnection(connection);
+    if (open == nullptr) {
+        return false;
+    }
+    const std::optional<QByteArray> frame = EncodeFrame(
+        EFrameKind::Rpc,
+        QJsonDocument(QJsonObject{
+                          {QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                          {QStringLiteral("method"), method},
+                          {QStringLiteral("params"), params},
+                      })
+            .toJson(QJsonDocument::Compact));
+    return frame && open->SendFrame(*frame);
+}
+
 qsizetype Server::ConnectionCount() const {
     return findChildren<Connection*>(Qt::FindDirectChildrenOnly).size();
 }
@@ -336,7 +423,21 @@ void Server::Accept() {
             socket->deleteLater();
             continue;
         }
-        new Connection(socket, Dispatcher_, Bus_, this);
+        const ConnectionId id = NextConnectionId_++;
+        auto* connection = new Connection(socket, Dispatcher_, Bus_, id, this);
+        Connections_.insert(id, connection);
+        connect(connection, &Connection::InputReceived, this,
+                [this, id](std::uint32_t channel, const QByteArray& bytes) {
+                    emit InputReceived(id, channel, bytes);
+                });
+        connect(connection, &Connection::Closed, this, [this, id] {
+            Connections_.remove(id);
+            // Not from inside a send of the layer above.
+            QMetaObject::invokeMethod(
+                this, [this, id] { emit ConnectionClosed(id); },
+                Qt::QueuedConnection);
+        });
+        connection->Start();
     }
 }
 
