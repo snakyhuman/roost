@@ -123,6 +123,17 @@ target_compile_definitions(io_thread_test PRIVATE
     ROOST_PLUGINS_DIR="${PROJECT_BINARY_DIR}/roost-plugins")
 add_dependencies(io_thread_test roostd fake_tui claude-adapter)
 
+# The developer mode: one TerminalItem wired to a session of the real roostd,
+# and the roost executable started with --session against it.
+roost_add_qt_test(single_session_test roost/single_session_test.cpp roost_app)
+target_compile_definitions(single_session_test PRIVATE
+    ROOSTD_PATH="$<TARGET_FILE:roostd>"
+    ROOST_PATH="$<TARGET_FILE:roost>"
+    FAKE_TUI_PATH="$<TARGET_FILE:fake_tui>"
+    FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    ROOST_PLUGINS_DIR="${PROJECT_BINARY_DIR}/roost-plugins")
+add_dependencies(single_session_test roostd roost fake_tui claude-adapter)
+
 # Memory of one terminal in the window (docs/prior-art.md §2.5). Not a test:
 # not registered with ctest, built only where it can read the process memory.
 if(APPLE)
