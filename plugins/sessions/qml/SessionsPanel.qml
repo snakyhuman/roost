@@ -11,6 +11,11 @@ FocusScope {
     // A SessionRef, {agent, id}, or null; the output of the panel.
     property var selected: null
 
+    // Enter or a tap opened or targeted a row, the open one included: the shell
+    // may move the keyboard to the terminal. Not emitted when Enter does
+    // nothing.
+    signal activated
+
     // The session the cursor was on last, {agent, id}, kept while the list is
     // empty or being replaced, to put the cursor back.
     property var cursorKey: null
@@ -72,6 +77,7 @@ FocusScope {
         if (!isSame(selected, ref)) {
             selected = ref;
         }
+        activated();
     }
 
     // After a reset of the model, which says before it changes `loaded`: run
@@ -164,8 +170,20 @@ FocusScope {
         }
 
         // Enter, on the main keys and on the keypad.
-        Keys.onReturnPressed: root.openCurrent()
-        Keys.onEnterPressed: root.openCurrent()
+        // A held Enter (auto-repeat) does nothing: it would go on into the
+        // terminal, and there reopen an ended or failed session at once.
+        Keys.onReturnPressed: event => {
+            event.accepted = true;
+            if (!event.isAutoRepeat) {
+                root.openCurrent();
+            }
+        }
+        Keys.onEnterPressed: event => {
+            event.accepted = true;
+            if (!event.isAutoRepeat) {
+                root.openCurrent();
+            }
+        }
 
         delegate: Item {
             id: row
