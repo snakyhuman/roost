@@ -941,6 +941,99 @@ private slots:
         QVERIFY(Channels_->Pool().Find(Key("s3")));
     }
 
+    void AViewKeepsASessionFromEviction() {
+        QVERIFY(Start({.Capacity = 2, .Pty = {}}));
+        Window* window = Connect();
+        QVERIFY(window);
+        const std::uint32_t first = window->Open("s1");
+        const std::uint32_t second = window->Open("s2");
+        QVERIFY(first && second);
+
+        const rpc::Result viewed = window->Call(
+            "session.view", QJsonObject{{"channel", static_cast<int>(first)}});
+        QVERIFY(viewed);
+        QVERIFY(viewed->isNull());
+
+        // s2 was viewed the longest ago.
+        QVERIFY(window->Open("s3"));
+        QTRY_COMPARE_WITH_TIMEOUT(window->Closed.size(), 1, TIMEOUT_MS);
+        QCOMPARE(window->Closed.at(0),
+                 (QJsonObject{{"channel", static_cast<int>(second)},
+                              {"reason", "evicted"}}));
+        QVERIFY(Channels_->Pool().Find(Key("s1")));
+        QCOMPARE(Channels_->Pool().Find(Key("s2")), nullptr);
+        QVERIFY(Channels_->Pool().Find(Key("s3")));
+    }
+
+    void AViewOfAnUnknownChannelIsInvalidParams() {
+        QVERIFY(Start());
+        Window* owner = Connect();
+        Window* stranger = Connect();
+        QVERIFY(owner && stranger);
+        QCOMPARE(owner->Open("s1"), 1U);
+
+        const auto expectInvalid = [](Window* window,
+                                      const QJsonValue& params) {
+            const rpc::Result result = window->Call("session.view", params);
+            QVERIFY(!result);
+            QCOMPARE(result.error().Code, INVALID_PARAMS);
+        };
+        expectInvalid(owner, QJsonObject{{"channel", 99}});
+        expectInvalid(stranger, QJsonObject{{"channel", 1}});
+        expectInvalid(owner, QJsonObject{});
+        expectInvalid(owner, QJsonObject{{"channel", "1"}});
+        QCOMPARE(Channels_->ChannelCount(), 1);
+    }
+
+    void AViewChangesNothingButTheViewingOrder() {
+        QVERIFY(Start());
+        Window* viewer = Connect();
+        Window* other = Connect();
+        QVERIFY(viewer && other);
+        const std::uint32_t channel = viewer->Open("s1");
+        const std::uint32_t shared = other->Open("s1");
+        QVERIFY(channel && shared);
+        // The program has said all it has to say.
+        QVERIFY(viewer->WaitDump(channel, "answers da1=1 cpr=1"));
+        QVERIFY(other->WaitDump(shared, "answers da1=1 cpr=1"));
+        const qsizetype viewerLog = viewer->Log.size();
+        const qsizetype otherLog = other->Log.size();
+        const PtySize size = Channels_->Pool().Find(Key("s1"))->Size();
+
+        const rpc::Result viewed =
+            viewer->Call("session.view",
+                         QJsonObject{{"channel", static_cast<int>(channel)}});
+        QVERIFY(viewed);
+        QVERIFY(viewed->isNull());
+
+        // No notification, frame or other change on either connection.
+        QTest::qWait(NOTHING_HAPPENS_MS);
+        QCOMPARE(viewer->Log.size(), viewerLog);
+        QCOMPARE(other->Log.size(), otherLog);
+        QVERIFY(viewer->Closed.isEmpty());
+        QVERIFY(other->Closed.isEmpty());
+        QCOMPARE(Channels_->Pool().Find(Key("s1"))->Size(), size);
+        QCOMPARE(Channels_->ChannelCount(), 2);
+        QVERIFY(!Channels_->Pool().Find(Key("s1"))->IsClosed());
+    }
+
+    void AViewOfAClosedChannelIsInvalidParams() {
+        QVERIFY(Start());
+        Window* window = Connect();
+        QVERIFY(window);
+        const std::uint32_t channel = window->Open("s1");
+        QVERIFY(channel);
+        const QJsonObject params{{"channel", static_cast<int>(channel)}};
+        QVERIFY(window->Call("session.view", params));
+        QVERIFY(window->Call("session.close", params));
+
+        const rpc::Result viewed = window->Call("session.view", params);
+        QVERIFY(!viewed);
+        QCOMPARE(viewed.error().Code, INVALID_PARAMS);
+        QCOMPARE(Channels_->ChannelCount(), 0);
+        QVERIFY(Channels_->Pool().Find(Key("s1")));
+    }
+
     void OutputDuringAnOpenIsNeitherLostNorRepeated() {
         QVERIFY(Start());
         Window* first = Connect();
