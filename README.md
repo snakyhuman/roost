@@ -41,12 +41,23 @@ finds the installed plugins next to itself, with no `ROOST_PLUGINS_PATH`.
 
 ## Run
 
-Start the daemon, then the window:
-
 ```sh
-build/dev/bin/roostd
 build/dev/bin/roost [--dev]
 ```
+
+When nobody listens on the socket (no socket file, or a stale one), the window
+starts `roostd` itself: the `roostd` next to its own binary, detached, so it
+outlives the window and keeps the warm sessions. The banner reads "Starting
+roostd…" meanwhile, and the daemon's output goes to `roostd.log` in the
+directory of the socket (what it prints before it holds the socket lock, to
+`roostd.start.log` there). If the start fails, the banner says why. A roostd
+that refuses the handshake (another version) is not started over: the window
+shows the refusal. A live roostd with a full accept backlog also refuses
+connections, so a second one may be started; it loses the socket lock and
+exits. `roost --no-spawn` turns the start off. The start from an AppImage
+(`$APPIMAGE --roostd`, handled by AppRun) arrives with the AppImage packaging
+step and does not work before it.
+You can still run `build/dev/bin/roostd` by hand first.
 
 roostd finds the built-in plugins next to itself (`build/dev/roost-plugins` for
 a build tree) and then looks in `<ROOST_CONFIG or ~/.config/roost>/plugins`. A
