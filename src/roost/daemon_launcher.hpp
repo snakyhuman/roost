@@ -1,10 +1,12 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QProcessEnvironment>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QtTypes>
 
 #include <chrono>
 #include <functional>
@@ -38,6 +40,9 @@ namespace roost {
 // in the meantime starts nothing, "Starting" is true, and the start follows the
 // read. Without settings the process is started with the environment as it is.
 //
+// Restart() is the button of the banner for a roostd of another version: it
+// stops the old one by SIGTERM and starts a new one (below).
+//
 // A start that fails (the process does not start, or the timeout passes
 // without a connection) leaves a Failure() text until roostd answers
 // (Connected or Refused); later starts keep it, the window shows it in the
@@ -64,6 +69,9 @@ public:
 
     static constexpr std::chrono::milliseconds DEFAULT_START_TIMEOUT{
         std::chrono::seconds(15)};
+    // How long Restart() waits for the old roostd to let go of the socket.
+    static constexpr std::chrono::milliseconds DEFAULT_STOP_TIMEOUT{
+        std::chrono::seconds(5)};
 
     // The roostd of this installation: `roostd` next to the executable, or
     // `$APPIMAGE --roostd` inside an AppImage (APPIMAGE and APPDIR set, and
@@ -91,6 +99,7 @@ public:
         std::chrono::milliseconds startTimeout = DEFAULT_START_TIMEOUT,
         StartFunction start = &DaemonLauncher::StartDetached,
         std::optional<LoginEnvironment::Settings> environment = std::nullopt,
+        std::chrono::milliseconds stopTimeout = DEFAULT_STOP_TIMEOUT,
         QObject* parent = nullptr);
 
     // Whether a start is in flight; the window shows "Starting roostd…".
@@ -100,15 +109,42 @@ public:
     // refusal; the window shows it in the banner.
     const QString& Failure() const { return Failure_; }
 
+    // Whether Restart() is waiting for the old roostd to go.
+    bool Restarting() const { return Restarting_; }
+
+    // Replaces the roostd of `socketPath`, which refused the window (another
+    // version); `peerPid` is the pid of the process that refused, as the
+    // connection tells it (Api::RefusedPeerPid). Reads `<socketPath>.lock`
+    // (QLockFile::getLockInfo) and sends SIGTERM only if the lock is held, has
+    // the application name of roostd (protocol::DAEMON_APPLICATION_NAME) and
+    // names `peerPid` (known, above 1, not this process); else Failure() says
+    // why and nothing is killed. Then, without blocking, waits
+    // up to the stop timeout for the lock to be released (roostd closes the
+    // socket before it releases the lock); if it is not, Failure() says so
+    // (no SIGKILL). When it is, starts roostd as OnNoListener does (same
+    // in-flight guard and failure texts) and emits Restarted(): the Api has to
+    // connect again. Does nothing while a restart waits.
+    void Restart(const QString& socketPath, qint64 peerPid);
+
 signals:
     void StartingChanged(bool starting);
     void FailureChanged();
+    void RestartingChanged(bool restarting);
+    // The new roostd is started (not yet answering).
+    void Restarted();
 
 private:
     void OnNoListener();
-    // The start itself, with the environment ready.
-    void StartRoostd();
     void OnTimeout();
+    // Starts roostd, or the read of the environment it waits for; false if
+    // the process did not start.
+    bool BeginStart();
+    // Starts the process with the environment ready; sets Starting_ or
+    // Failure_. False if it did not start.
+    bool StartProcess();
+    void PollStop();
+    void FailRestart(const QString& reason);
+    void SetRestarting(bool restarting);
     void SetStarting(bool starting);
     void SetFailure(QString failure);
 
@@ -117,6 +153,12 @@ private:
     std::unique_ptr<LoginEnvironment> Login_;
     StartFunction Start_;
     QTimer Timeout_;
+    QTimer StopPoll_;
+    std::chrono::milliseconds StopTimeout_;
+    QString LockPath_;
+    qint64 StopPid_ = 0;
+    QElapsedTimer StopClock_;
+    bool Restarting_ = false;
     bool Starting_ = false;
     QString Failure_;
 };
