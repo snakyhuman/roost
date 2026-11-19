@@ -28,6 +28,7 @@
 #                                  frameworks to copy through those paths) and
 #                                  deletes the run paths that are not @... from
 #                                  the bundle after macdeployqt.
+#                                  tools/package_linux.sh sets it OFF.
 #   roost_install_plugin_binary()  installs a target of a plugin
 
 option(ROOST_INSTALL_RPATH_TO_QT
