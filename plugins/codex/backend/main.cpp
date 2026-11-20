@@ -11,6 +11,8 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <utility>
 
 #include "codex/backend/adapter.hpp"
 
@@ -52,23 +54,20 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     QCommandLineParser parser;
     parser.setApplicationDescription("Lists saved Codex sessions for roostd.");
-    const QCommandLineOption programOption(
-        "program", "Codex executable.", "path",
-        qEnvironmentVariable("ROOST_CODEX_EXECUTABLE", program));
     const QCommandLineOption pollMs("poll-ms", "Delay between lists.", "ms");
     const QCommandLineOption timeoutMs("timeout-ms",
                                        "Time allowed to list threads.", "ms");
-    parser.addOptions({programOption, pollMs, timeoutMs});
+    parser.addOptions({pollMs, timeoutMs});
     parser.addHelpOption();
     parser.process(app);
 
     roost::codex::Adapter adapter(
-        parser.value(programOption),
+        qEnvironmentVariable("ROOST_CODEX_EXECUTABLE", program),
         Milliseconds(parser.value(pollMs), std::chrono::seconds(5)),
         Milliseconds(parser.value(timeoutMs), std::chrono::seconds(15)), Send);
     // Windows redirected stdin is a pipe handle, not a socket notifier.
     // Keep the blocking read off the event loop on all hosts.
-    QThread* input = QThread::create([&app, &adapter] {
+    const std::unique_ptr<QThread> input(QThread::create([&app, &adapter] {
         QByteArray line;
         int code = EXIT_SUCCESS;
         for (int byte = std::fgetc(stdin); byte != EOF;
@@ -96,11 +95,10 @@ int main(int argc, char** argv) {
         QMetaObject::invokeMethod(
             &app, [code] { QCoreApplication::exit(code); },
             Qt::QueuedConnection);
-    });
+    }));
     input->start();
     adapter.Start();
     const int result = QCoreApplication::exec();
     input->wait();
-    delete input;
     return result;
 }

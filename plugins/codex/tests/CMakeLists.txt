@@ -5,4 +5,4 @@ target_link_libraries(codex_adapter_test PRIVATE Qt6::Test)
 add_dependencies(codex_adapter_test codex-adapter)
 add_test(NAME codex_adapter_test
     COMMAND codex_adapter_test "$<TARGET_FILE:codex-adapter>")
-set_tests_properties(codex_adapter_test PROPERTIES TIMEOUT 30)
+set_tests_properties(codex_adapter_test PROPERTIES TIMEOUT 30 LABELS threads)

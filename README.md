@@ -13,9 +13,8 @@ emulator. Every feature is a plugin, and panels can be linked to each other.
 
 Status: the window lists Claude Code background sessions and saved Codex
 threads, and opens them in a terminal panel. It ships as a macOS `.dmg` and a
-Linux AppImage. The panel
-layout, the keymap file and notifications are not there yet; see
-`docs/design.md` for the design and the plan.
+Linux AppImage. The panel layout, the keymap file and notifications are not
+there yet; see `docs/design.md` for the design and the plan.
 
 ## Install
 
@@ -75,11 +74,6 @@ unarchived interactive threads and opens them with `codex resume` in their
 original directories. Create new Codex sessions in Codex. Roost lists saved
 threads but does not track live status in other Codex processes.
 
-Native Roost currently runs on macOS and Linux. The adapter can be built and
-tested on Windows on its own. It expects a native `codex.exe`. Build the
-standalone target with `cmake -S plugins/codex -B build/codex` using Qt 6.8+
-and a C++23 compiler.
-
 Logs are in the directory of the socket: `roostd.log` (the previous run is
 `roostd.log.1`) and `roostd.start.log` (what `roostd` prints before it holds
 the socket). The window writes its own log next to them: `roost.log`, one line
@@ -119,6 +113,9 @@ ctest --preset dev
 Binaries land in `build/dev/bin/`. Other presets: `asan-ubsan`, `tsan`, `release`, `tsan-qt`.
 `tsan-qt` builds against a Qt built with TSan (`tools/build_qt_tsan.sh <version> <prefix>`) and needs
 `ROOST_TSAN_QT_PREFIX=<prefix>`; it runs nightly in `.github/workflows/nightly-tsan.yml`.
+
+On Windows, the `windows` presets in `plugins/codex/` build and test the
+adapter on its own with clang-cl and Qt. The adapter expects `codex.exe`.
 
 ### Install the build
 
@@ -187,7 +184,7 @@ opens the file only once it holds the socket lock: a second roostd that loses
 the lock exits with code 1 and leaves the log alone.
 
 The window shows the session list on the left and the terminal on the right.
-The adapters use the agent CLIs from roostd's environment. In the list, ↑/↓ or `j`/`k` move the cursor. Enter opens the session and moves
+In the list, ↑/↓ or `j`/`k` move the cursor. Enter opens the session and moves
 the keyboard to the terminal; `Ctrl+\` (the Control key, also on macOS) moves it
 back to the list.
 

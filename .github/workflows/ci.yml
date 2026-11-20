@@ -211,10 +211,11 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
       - name: Build and test the adapter
+        working-directory: plugins/codex
         run: |
-          cmake -S plugins/codex -B build/codex -G "Visual Studio 17 2022" -A x64
-          cmake --build build/codex --config Release
-          ctest --test-dir build/codex -C Release --output-on-failure
+          cmake --preset windows
+          cmake --build --preset windows
+          ctest --preset windows
 
   format:
     name: format

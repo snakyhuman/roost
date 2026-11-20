@@ -38,27 +38,13 @@ QByteArray Line(const QJsonObject& object) {
     return QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n';
 }
 
-QString ThreadState(const QJsonObject& status) {
-    const QString type = status.value("type").toString();
-    if (type == "active") {
-        const QJsonArray flags = status.value("activeFlags").toArray();
-        return flags.contains("waitingOnApproval") ||
-                       flags.contains("waitingOnUserInput")
-                   ? QStringLiteral("blocked")
-                   : QStringLiteral("working");
-    }
-    return type == "systemError" ? QStringLiteral("failed")
-                                 : QStringLiteral("idle");
-}
-
 QJsonObject Session(const QJsonObject& thread, const QString& id) {
     QString title = thread.value("name").toString().simplified();
     if (title.isEmpty()) {
         title = thread.value("preview").toString().simplified();
     }
-    QJsonObject row{{"id", id},
-                    {"title", title.isEmpty() ? id : title},
-                    {"state", ThreadState(thread.value("status").toObject())}};
+    QJsonObject row{
+        {"id", id}, {"title", title.isEmpty() ? id : title}, {"state", "idle"}};
     const QString cwd = thread.value("cwd").toString();
     if (!cwd.isEmpty()) {
         row.insert("cwd", cwd);

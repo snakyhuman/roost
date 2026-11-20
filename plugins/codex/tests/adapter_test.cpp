@@ -14,13 +14,11 @@
 
 namespace {
 
-QJsonObject Thread(const QString& id, const QString& preview,
-                   const QString& status = "notLoaded") {
+QJsonObject Thread(const QString& id, const QString& preview) {
     return QJsonObject{{"id", id},
                        {"preview", preview},
                        {"createdAt", 1'730'831'111},
-                       {"cwd", qEnvironmentVariable("ROOST_TEST_PROJECT")},
-                       {"status", QJsonObject{{"type", status}}}};
+                       {"cwd", qEnvironmentVariable("ROOST_TEST_PROJECT")}};
 }
 
 void Write(const QJsonObject& message) {
@@ -77,14 +75,10 @@ int AppServer() {
         QJsonObject first = Thread("thr_first", "First prompt");
         if (polls > 1) {
             first.insert("name", "Renamed");
-            first.insert(
-                "status",
-                QJsonObject{{"type", "active"},
-                            {"activeFlags", QJsonArray{"waitingOnApproval"}}});
         }
         QJsonArray data{first};
         if (polls > 1 && scenario != "bad-page") {
-            data.append(Thread("new", "New prompt", "systemError"));
+            data.append(Thread("new", "New prompt"));
         }
         const QJsonValue cursor = polls == 1 || scenario == "bad-page"
                                       ? QJsonValue("page+2")
@@ -115,9 +109,10 @@ private:
         environment.insert("ROOST_TEST_PROJECT",
                            QDir::toNativeSeparators(Project_.path()));
         environment.insert("ROOST_TEST_SCENARIO", scenario);
+        environment.insert("ROOST_CODEX_EXECUTABLE", program);
         Process_.setProcessEnvironment(environment);
-        Process_.start(AdapterPath_, {"--program", program, "--poll-ms", pollMs,
-                                      "--timeout-ms", timeoutMs});
+        Process_.start(AdapterPath_,
+                       {"--poll-ms", pollMs, "--timeout-ms", timeoutMs});
         return Process_.waitForStarted();
     }
 
@@ -218,11 +213,9 @@ private slots:
         const auto changed =
             Events_[0].value("params").toObject().value("session").toObject();
         QCOMPARE(changed.value("title"), QJsonValue("Renamed"));
-        QCOMPARE(changed.value("state"), QJsonValue("blocked"));
         const auto added =
             Events_[1].value("params").toObject().value("session").toObject();
         QCOMPARE(added.value("id"), QJsonValue("new"));
-        QCOMPARE(added.value("state"), QJsonValue("failed"));
         QCOMPARE(Events_[2].value("method"), QJsonValue("session.removed"));
         QCOMPARE(Events_[2].value("params").toObject().value("session"),
                  QJsonValue("old"));
