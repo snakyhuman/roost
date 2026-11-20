@@ -535,6 +535,9 @@ FocusScope {
         }
         const title = titleOf(ref);
         agentsWithCommand(verb, agents => {
+            if (confirm !== null || promptKind !== "") {
+                return;
+            }
             if (!agents.has(ref.agent)) {
                 showNotice(label + " unavailable for " + ref.agent);
                 return;
@@ -551,9 +554,6 @@ FocusScope {
     // Commands are optional contributions, independent of terminal support.
     function agentsWithCommand(verb, callback) {
         Roost.call("plugins.list", {}, (error, result) => {
-            if (confirm !== null || promptKind !== "") {
-                return;
-            }
             if (error) {
                 showNotice(failure(error));
                 return;
@@ -584,6 +584,9 @@ FocusScope {
         }
         const title = titleOf(ref);
         agentsWithCommand("stop", agents => {
+            if (confirm !== null || promptKind !== "") {
+                return;
+            }
             const stop = agents.has(ref.agent);
             confirm = {
                 "action": "archive",
@@ -622,6 +625,9 @@ FocusScope {
 
     function askRespawnAll() {
         agentsWithCommand("respawnAll", supported => {
+            if (confirm !== null || promptKind !== "") {
+                return;
+            }
             const agents = listedAgents().filter(agent => supported.has(agent));
             if (agents.length === 0) {
                 return;
@@ -748,51 +754,50 @@ FocusScope {
         }
     }
 
-    // n takes the directory and category from the cursor. Prefer the cursor's
-    // agent for the task, then the first agent that can start a session.
+    // n opens the prompt immediately and keeps the cursor's directory and
+    // category. The agent is chosen when the completed prompt is submitted.
     function openNewSessionPrompt() {
-        const ref = cursorRef();
+        const ref = sessionsList.cursorSession;
         const data = ref === null ? null : sessionData(ref);
         const category = sessionsList.cursorCategory;
-        const cwd = data && data.cwd ? data.cwd : homeDirectory();
-        agentsWithCommand("newSession", agents => {
-            if (agents.size === 0) {
-                showNotice("No agent can start a session");
-                return;
-            }
-            const agent = ref !== null && agents.has(ref.agent) ? ref.agent : agents.values().next().value;
-            promptNew = {
-                "agent": agent,
-                "cwd": cwd,
-                "category": category === null ? "" : category,
-                "task": ""
-            };
-            openPrompt("task", null, "");
-        });
+        promptNew = {
+            "agent": ref === null ? "" : ref.agent,
+            "cwd": data && data.cwd ? data.cwd : homeDirectory(),
+            "category": category === null ? "" : category,
+            "task": ""
+        };
+        openPrompt("task", null, "");
     }
 
     function homeDirectory() {
         return decodeURIComponent(StandardPaths.writableLocation(StandardPaths.HomeLocation).toString().replace(/^file:\/\//, ""));
     }
 
-    function startSession(agent, cwd, task, category) {
+    function startSession(preferredAgent, cwd, task, category) {
         showNotice("Starting…");
-        runCommand(agent, "newSession", {
-            "cwd": cwd,
-            "prompt": task
-        }, (error, result) => {
-            if (error) {
-                showNotice("Not started: " + failure(error));
+        agentsWithCommand("newSession", agents => {
+            if (agents.size === 0) {
+                showNotice("No agent can start a session");
                 return;
             }
-            const ref = {
-                "agent": result.agent,
-                "id": result.id
-            };
-            showNotice("\"" + result.title + "\" started");
-            if (category !== "") {
-                sessionsList.setCategory(ref, category);
-            }
+            const agent = agents.has(preferredAgent) ? preferredAgent : agents.values().next().value;
+            runCommand(agent, "newSession", {
+                "cwd": cwd,
+                "prompt": task
+            }, (error, result) => {
+                if (error) {
+                    showNotice("Not started: " + failure(error));
+                    return;
+                }
+                const ref = {
+                    "agent": result.agent,
+                    "id": result.id
+                };
+                showNotice("\"" + result.title + "\" started");
+                if (category !== "") {
+                    sessionsList.setCategory(ref, category);
+                }
+            });
         });
     }
 

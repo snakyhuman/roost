@@ -7,6 +7,7 @@
 #include <QSignalBlocker>
 #include <QStandardPaths>
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 
@@ -18,6 +19,8 @@ namespace {
 
 constexpr QLatin1StringView AGENT{"codex"};
 constexpr int PAGE_SIZE = 100;
+constexpr qsizetype MAX_PAGES = 1'000;
+constexpr auto MAX_POLL_DURATION = std::chrono::minutes(2);
 constexpr qsizetype MAX_TITLE_LENGTH = 200;
 constexpr qsizetype MAX_LINE_LENGTH = 16LL * 1024 * 1024;
 
@@ -104,9 +107,12 @@ Adapter::Adapter(QString program, std::chrono::milliseconds pollInterval,
         QProcess::UnixProcessFlag::ResetSignalHandlers);
     PollTimer_.setSingleShot(true);
     TimeoutTimer_.setSingleShot(true);
+    TimeoutTimer_.setTimerType(Qt::PreciseTimer);
     connect(&PollTimer_, &QTimer::timeout, this, &Adapter::Poll);
     connect(&TimeoutTimer_, &QTimer::timeout, this, [this] {
-        Fail("codex app-server timed out while listing threads");
+        Fail(PollDeadline_.hasExpired()
+                 ? "codex app-server poll exceeded its deadline"
+                 : "codex app-server timed out while listing threads");
     });
     connect(&Process_, &QProcess::started, this, [this] {
         Request("initialize",
@@ -150,9 +156,7 @@ QFuture<QByteArray> Adapter::Handle(QByteArrayView message) const {
 }
 
 void Adapter::Poll() {
-    PendingSessions_.clear();
-    PendingRows_ = {};
-    Cursors_.clear();
+    PollDeadline_.setRemainingTime(MAX_POLL_DURATION, Qt::PreciseTimer);
     if (Process_.state() == QProcess::Running) {
         RequestPage();
         return;
@@ -164,8 +168,13 @@ void Adapter::Poll() {
         Publish();
         return;
     }
-    TimeoutTimer_.start(Timeout_);
+    StartReplyTimer();
     Process_.start(Executable_, {"app-server"});
+}
+
+void Adapter::StartReplyTimer() {
+    const std::chrono::milliseconds remaining(PollDeadline_.remainingTime());
+    TimeoutTimer_.start(std::min(Timeout_, remaining));
 }
 
 void Adapter::Read() {
@@ -205,6 +214,10 @@ void Adapter::HandleReply(const QJsonObject& reply) {
     }
     PendingId_.reset();
     TimeoutTimer_.stop();
+    if (PollDeadline_.hasExpired()) {
+        Fail("codex app-server poll exceeded its deadline");
+        return;
+    }
     if (!reply.value("result").isObject()) {
         const QString message = reply.value("error")
                                     .toObject()
@@ -228,7 +241,7 @@ void Adapter::HandleReply(const QJsonObject& reply) {
 
 void Adapter::Request(const QString& method, const QJsonObject& params) {
     PendingId_ = ++NextRequestId_;
-    TimeoutTimer_.start(Timeout_);
+    StartReplyTimer();
     Process_.write(
         Line({{"id", *PendingId_}, {"method", method}, {"params", params}}));
 }
@@ -276,6 +289,11 @@ void Adapter::HandlePage(const QJsonObject& page) {
         Fail("codex app-server repeated a thread/list cursor");
         return;
     }
+    if (Cursors_.size() >= MAX_PAGES - 1) {
+        Fail(QStringLiteral("codex app-server thread/list exceeded %1 pages")
+                 .arg(MAX_PAGES));
+        return;
+    }
     Cursors_.insert(next);
     RequestPage(next);
 }
@@ -321,6 +339,9 @@ void Adapter::StopProcess() {
 
 void Adapter::FinishPoll() {
     TimeoutTimer_.stop();
+    PendingSessions_.clear();
+    PendingRows_ = {};
+    Cursors_.clear();
     Listed_ = true;
     auto waiting = std::exchange(Waiting_, {});
     for (Waiting& request : waiting) {
@@ -350,14 +371,17 @@ QFuture<jsonrpc::Result> Adapter::AfterFirstPoll(const QString& sessionId) {
 }
 
 jsonrpc::Result Adapter::Answer(const QString& sessionId) const {
-    if (!Error_.isEmpty()) {
-        return Failed(Error_);
-    }
     if (sessionId.isEmpty()) {
+        if (!Error_.isEmpty()) {
+            return Failed(Error_);
+        }
         return QJsonValue(Rows_);
     }
     const auto row = Sessions_.constFind(sessionId);
     if (row == Sessions_.cend()) {
+        if (!Error_.isEmpty()) {
+            return Failed(Error_);
+        }
         return QJsonValue(QJsonValue::Null);
     }
     QJsonObject command{{"program", Executable_},

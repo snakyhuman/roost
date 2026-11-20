@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDeadlineTimer>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -38,6 +39,7 @@ private:
     };
 
     void Poll();
+    void StartReplyTimer();
     void Read();
     void HandleReply(const QJsonObject& reply);
     void Request(const QString& method, const QJsonObject& params);
@@ -60,6 +62,7 @@ private:
     QProcess Process_;
     QTimer PollTimer_;
     QTimer TimeoutTimer_;
+    QDeadlineTimer PollDeadline_;
     QByteArray Buffer_;
     qint64 NextRequestId_ = 0;
     std::optional<qint64> PendingId_;

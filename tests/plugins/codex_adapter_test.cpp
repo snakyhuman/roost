@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -56,13 +57,17 @@ QJsonArray OddThreads(const QString& project) {
 // The test executable doubles as the Codex CLI. The default fixture first
 // lists two pages, then changes a title, removes a thread and adds another.
 int AppServer() {
-    struct sigaction disposition{};
-    if (::sigaction(SIGPIPE, nullptr, &disposition) != 0 ||
-        disposition.sa_handler != SIG_DFL) {
-        return 1;
-    }
     int polls = 0;
     const QString scenario = qEnvironmentVariable("ROOST_TEST_SCENARIO");
+    if (scenario == "signals") {
+        for (const int signal : {SIGPIPE, SIGUSR1}) {
+            struct sigaction disposition{};
+            if (::sigaction(signal, nullptr, &disposition) != 0 ||
+                disposition.sa_handler != SIG_DFL) {
+                return 1;
+            }
+        }
+    }
     const QDir project(qEnvironmentVariable("ROOST_TEST_PROJECT"));
     const QString failed = project.filePath("bad-page-sent");
     const QString recover = project.filePath("recover");
@@ -132,6 +137,10 @@ int AppServer() {
             continue;
         }
         const QString cursor = params.value("cursor").toString();
+        if (scenario == "endless-pages") {
+            WritePage(id, {}, QString::number(id.toInteger()));
+            continue;
+        }
         if (scenario == "slow-pages") {
             QTest::qSleep(300);
             if (cursor == "page+3") {
@@ -330,6 +339,15 @@ private slots:
                     .toString()
                     .contains("invalid thread/list page"));
         QVERIFY(Events_.isEmpty());
+        const QJsonObject known =
+            Call("agent.attachCommand", {{"session", "old"}})
+                .value("result")
+                .toObject();
+        QCOMPARE(known.value("args"), QJsonValue(QJsonArray{"resume", "old"}));
+        QCOMPARE(known.value("cwd").toString(), WorkDirectory());
+        QCOMPARE(Call("agent.attachCommand", {{"session", "unknown"}})
+                     .value("error"),
+                 response.value("error"));
         QVERIFY(Touch(QDir(WorkDirectory()).filePath("recover")));
         QTRY_COMPARE_WITH_TIMEOUT(
             Call("agent.listSessions").value("result").toArray(), rows, 5000);
@@ -343,6 +361,33 @@ private slots:
             Call("agent.listSessions").value("result").toArray();
         QCOMPARE(rows.size(), 1);
         QCOMPARE(rows.first().toObject().value("id"), QJsonValue("last"));
+    }
+
+    void AChainOfDistinctCursorsCannotKeepAPollOpen() {
+        QVERIFY(Launch("endless-pages", QCoreApplication::applicationFilePath(),
+                       "10000"));
+        const QJsonObject error =
+            Call("agent.listSessions").value("error").toObject();
+        QCOMPARE(error.value("code").toInt(), -32603);
+        QVERIFY(
+            error.value("message").toString().contains("exceeded 1000 pages"));
+    }
+
+    void TheAppServerRestoresDefaultSignalHandlers() {
+        // Qt itself resets SIGPIPE on exec. SIGUSR1 verifies the explicit
+        // ResetSignalHandlers flag reaches the App Server as well.
+        const auto oldPipe = ::signal(SIGPIPE, SIG_IGN);
+        QVERIFY(oldPipe != SIG_ERR);
+        const auto restorePipe =
+            qScopeGuard([oldPipe] { ::signal(SIGPIPE, oldPipe); });
+        const auto oldUser = ::signal(SIGUSR1, SIG_IGN);
+        QVERIFY(oldUser != SIG_ERR);
+        const auto restoreUser =
+            qScopeGuard([oldUser] { ::signal(SIGUSR1, oldUser); });
+
+        QVERIFY(Launch("signals", QCoreApplication::applicationFilePath()));
+        QCOMPARE(Call("agent.listSessions").value("result").toArray().size(),
+                 2);
     }
 
     void BadIdsAreSkippedAndAWorkingDirectoryIsOptional() {

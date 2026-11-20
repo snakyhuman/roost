@@ -701,10 +701,21 @@ private slots:
 
         QVERIFY(Put("bg.stdout",
                     "backgrounded · " + STARTED.toUtf8() + " · Do it\n"));
-        StartNewSession("do it");
+        // These keystrokes go straight to the task input. The command
+        // lookup has to wait for submit, so d and x cannot act on the list.
+        Press(Qt::Key_N);
+        QVERIFY(Prompting());
+        QVERIFY(Part("sessionsPromptInput")->hasActiveFocus());
+        Type("dx do it");
+        QCOMPARE(PromptText(), QString("dx do it"));
+        QVERIFY(Confirm().isEmpty());
+        Press(Qt::Key_Return);
+        QTRY_COMPARE_WITH_TIMEOUT(PromptLabel(), QString("Category:"),
+                                  TIMEOUT_MS);
+        Press(Qt::Key_Return);
         QTRY_COMPARE_WITH_TIMEOUT(BgRan().size(), 2, TIMEOUT_MS);
         QCOMPARE(Canonical(BgRan().value(0)), Canonical(cwd));
-        QCOMPARE(BgRan().value(1), QString("[--bg][--][do it]"));
+        QCOMPARE(BgRan().value(1), QString("[--bg][--][dx do it]"));
         QTRY_VERIFY_WITH_TIMEOUT(Notice().contains("Do it"), TIMEOUT_MS);
     }
 
