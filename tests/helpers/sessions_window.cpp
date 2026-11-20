@@ -70,6 +70,7 @@ void SessionsWindow::Teardown() {
     CloseWindow();
     StopDaemon();
     WithoutTerminal_ = false;
+    Unexposed_ = false;
     SpySelected_ = false;
 }
 
@@ -235,6 +236,9 @@ void SessionsWindow::OpenWindow() {
     QVERIFY(Singleton_ != nullptr);
     Singleton_->setApi(*Api_);
     Api_->Connect(SocketPath());
+    if (Unexposed_) {
+        Engine_->setInitialProperties({{"visible", false}});
+    }
     Engine_->loadFromModule("Roost.Shell", "Main");
     QVERIFY(!Engine_->rootObjects().isEmpty());
     Loader_ =
@@ -255,8 +259,12 @@ void SessionsWindow::OpenWindow() {
                               QString("connected"), TIMEOUT_MS);
     auto* window = qobject_cast<QQuickWindow*>(Root());
     QVERIFY(window != nullptr);
-    QVERIFY(QTest::qWaitForWindowExposed(window));
-    QVERIFY(QTest::qWaitForWindowActive(window));
+    if (Unexposed_) {
+        Adopt(window);
+    } else {
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QVERIFY(QTest::qWaitForWindowActive(window));
+    }
     QTRY_VERIFY_WITH_TIMEOUT(Singleton_->sessions()->loaded(), TIMEOUT_MS);
 }
 

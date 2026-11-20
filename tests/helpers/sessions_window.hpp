@@ -151,7 +151,11 @@ public:
     void CloseWindow();
 
     QObject* Root() { return Engine_->rootObjects().first(); }
-    QQuickWindow* Window() { return qobject_cast<QQuickWindow*>(Root()); }
+    // The window that gets the input and the geometry; the root, unless a
+    // capture draws the items in a window of its own.
+    virtual QQuickWindow* Window() {
+        return qobject_cast<QQuickWindow*>(Root());
+    }
 
     QQuickItem* Slot(const QString& type);
 
@@ -261,6 +265,10 @@ public:
 protected:
     QStringList Changes_;
     bool WithoutTerminal_ = false;
+    // The root window is never shown (ui_inventory): OpenWindow does not wait
+    // for it to be exposed and active, and calls Adopt instead.
+    bool Unexposed_ = false;
+    virtual void Adopt(QQuickWindow* /*root*/) {}
     bool SpySelected_ = false;
     std::unique_ptr<QSignalSpy> SelectedSpy_;
     std::unique_ptr<QTemporaryDir> Dir_;

@@ -2,13 +2,15 @@
 // a designer who redraws the UI. Not a test: it asserts nothing about the
 // product and is not registered with ctest. Every case boots the real window
 // (Main.qml, the real panels) against a real roostd with a fake `claude`, on
-// the offscreen platform, and saves QQuickWindow::grabWindow() as
+// the offscreen platform, drawn through Qt Quick's RHI renderer (Metal on
+// macOS, the path users see; the software scene graph draws TerminalItem
+// wrongly) by a QQuickRenderControl into a texture, and saves it as
 // <out>/NN-<state>@<dpr>x.png. Session names and terminal text are made up.
 //
 //   tools/ui_inventory.sh <out-dir>        (runs it at scale 1 and 2)
 //
 // Environment: UI_INVENTORY_OUT is the directory of the PNGs;
-// QT_SCALE_FACTOR=2 gives the @2x images.
+// QT_SCALE_FACTOR=2 gives the @2x images; QT_QUICK_BACKEND=rhi selects RHI.
 
 #include <QDir>
 #include <QFile>
@@ -17,13 +19,16 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QPainter>
 #include <QQmlExtensionPlugin>
-#include <QQuickItemGrabResult>
+#include <QQuickRenderControl>
+#include <QQuickRenderTarget>
+#include <QQuickWindow>
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
+#include <rhi/qrhi.h>
 #include <signal.h>
 
 #include "core/vt_render_state.hpp"
@@ -40,6 +45,119 @@ Q_IMPORT_QML_PLUGIN(Roost_ApiPlugin)
 Q_IMPORT_QML_PLUGIN(Roost_ShellPlugin)
 
 namespace {
+
+// Draws the items of a window that is never shown through QRhi (Metal).
+// On the offscreen platform a shown window has no Metal layer, and its render
+// thread crashes in the swap chain; the software scene graph draws
+// TerminalItem wrongly. So the root window of Main.qml stays hidden, its
+// content items move to a window of this class that has a QQuickRenderControl,
+// and a timer polishes it (layouts are laid out on polish) while the test
+// waits. Input goes to this window (SessionsWindow::Window).
+class Mirror {
+public:
+    explicit Mirror(QQuickWindow* root)
+        : Win_(&Control_), Content_(root->contentItem()) {
+        Win_.setGeometry(0, 0, root->width(), root->height());
+        Win_.setColor(root->color());
+        Ready_ = Control_.initialize();
+        Items_ = Content_->childItems();
+        // `anchors.fill: parent` follows the parent by itself.
+        for (QQuickItem* item : Items_) {
+            item->setParentItem(Win_.contentItem());
+        }
+        Fit();
+        QFocusEvent focus(QEvent::FocusIn, Qt::ActiveWindowFocusReason);
+        QCoreApplication::sendEvent(&Win_, &focus);
+        QObject::connect(&Tick_, &QTimer::timeout, &Win_, [this] {
+            Fit();
+            Control_.polishItems();
+        });
+        Tick_.start(16);
+    }
+
+    // The items go back to the root, which owns them.
+    ~Mirror() {
+        Tick_.stop();
+        for (QQuickItem* item : Items_) {
+            item->setParentItem(Content_);
+        }
+    }
+
+    bool Ready() const { return Ready_; }
+    QQuickWindow* Window() { return &Win_; }
+
+    // A window that is not shown gets no resize event, which is what sizes
+    // its content item.
+    void Fit() { Win_.contentItem()->setSize(Win_.size()); }
+
+    // One frame into a texture of the window's size, read back.
+    QImage Grab() {
+        QRhi* rhi = Control_.rhi();
+        if (rhi == nullptr) {
+            return {};
+        }
+        Fit();
+        const qreal dpr = Win_.devicePixelRatio();
+        const QSize size(qCeil(Win_.width() * dpr), qCeil(Win_.height() * dpr));
+        std::unique_ptr<QRhiTexture> texture(rhi->newTexture(
+            QRhiTexture::RGBA8, size, 1,
+            QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+        if (!texture->create()) {
+            return {};
+        }
+        std::unique_ptr<QRhiRenderBuffer> stencil(
+            rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, size, 1));
+        if (!stencil->create()) {
+            return {};
+        }
+        QRhiTextureRenderTargetDescription description{
+            QRhiColorAttachment(texture.get())};
+        description.setDepthStencilBuffer(stencil.get());
+        std::unique_ptr<QRhiTextureRenderTarget> target(
+            rhi->newTextureRenderTarget(description));
+        std::unique_ptr<QRhiRenderPassDescriptor> pass(
+            target->newCompatibleRenderPassDescriptor());
+        target->setRenderPassDescriptor(pass.get());
+        if (!target->create()) {
+            return {};
+        }
+        QQuickRenderTarget renderTarget =
+            QQuickRenderTarget::fromRhiRenderTarget(target.get());
+        renderTarget.setDevicePixelRatio(dpr);
+        Win_.setRenderTarget(renderTarget);
+
+        Control_.polishItems();
+        // The control owns its QRhi and starts and ends the offscreen frame.
+        Control_.beginFrame();
+        Control_.sync();
+        Control_.render();
+        QRhiReadbackResult read;
+        QRhiResourceUpdateBatch* updates = rhi->nextResourceUpdateBatch();
+        updates->readBackTexture(QRhiReadbackDescription(texture.get()), &read);
+        Control_.commandBuffer()->resourceUpdate(updates);
+        Control_.endFrame();
+        Win_.setRenderTarget(QQuickRenderTarget());
+        if (read.data.isEmpty()) {
+            return {};
+        }
+        QImage image(reinterpret_cast<const uchar*>(read.data.constData()),
+                     read.pixelSize.width(), read.pixelSize.height(),
+                     QImage::Format_RGBA8888_Premultiplied);
+        image = image.copy();
+        if (rhi->isYUpInFramebuffer()) {
+            image = image.flipped(Qt::Vertical);
+        }
+        return image;
+    }
+
+private:
+    QQuickRenderControl Control_;
+    QQuickWindow Win_;
+    QQuickItem* Content_;
+    QList<QQuickItem*> Items_;
+    QTimer Tick_;
+    bool Ready_ = false;
+};
 
 constexpr int WIDTH = 1280;
 constexpr int HEIGHT = 800;
@@ -128,33 +246,22 @@ public:
     QStringList Taken_;
     QStringList Missed_;
 
-    // The window as the user sees it. On the offscreen platform Qt Quick draws
-    // in software, which puts the terminal's custom scene-graph nodes at the
-    // origin of the window instead of at the item (see INDEX.md), and the
-    // terminal covers the list. So the window is grabbed for the banner, the
-    // problems strip and the gaps, and each panel slot is grabbed as an item
-    // (QQuickItem::grabToImage renders it at its own origin) and drawn over it
-    // where the slot is.
-    QImage Compose(QQuickWindow* window) {
-        QImage image = window->grabWindow();
-        const qreal scale = window->devicePixelRatio();
-        for (const QString& type : {LIST, TERMINAL}) {
-            QQuickItem* slot = Slot(type);
-            if (slot == nullptr || slot->width() <= 0) {
-                continue;
-            }
-            auto result = slot->grabToImage(QSize(
-                qRound(slot->width() * scale), qRound(slot->height() * scale)));
-            if (result.isNull() ||
-                !QTest::qWaitFor([&] { return !result->image().isNull(); },
-                                 TIMEOUT_MS)) {
-                continue;
-            }
-            QPainter painter(&image);
-            const QPointF at = slot->mapToScene(QPointF(0, 0)) * scale;
-            painter.drawImage(at, result->image());
-        }
-        return image;
+    std::unique_ptr<Mirror> Mirror_;
+
+    QQuickWindow* Window() override {
+        return Mirror_ ? Mirror_->Window() : SessionsWindow::Window();
+    }
+
+    void Adopt(QQuickWindow* root) override {
+        Mirror_ = std::make_unique<Mirror>(root);
+        QVERIFY(Mirror_->Ready());
+    }
+
+    // Ctrl+\ is a window shortcut and needs the window to be the active one;
+    // the shortcut's handler is the same call.
+    void ToList() {
+        QVERIFY(QMetaObject::invokeMethod(Slot(LIST), "forceActiveFocus"));
+        QTRY_VERIFY_WITH_TIMEOUT(ListView()->hasActiveFocus(), TIMEOUT_MS);
     }
 
     // Saves what the window shows now; the number follows the order of the
@@ -162,8 +269,8 @@ public:
     void Shot(const QString& name) {
         QTest::qWait(450);
         QQuickWindow* window = Window();
-        QVERIFY(window != nullptr);
-        QImage image = Compose(window);
+        QVERIFY(window != nullptr && Mirror_ != nullptr);
+        QImage image = Mirror_->Grab();
         QVERIFY(!image.isNull());
         const int scale = qRound(window->devicePixelRatio());
         const QString file = QStringLiteral("%1-%2@%3x.png")
@@ -260,6 +367,7 @@ public:
         QVERIFY(Singleton_ != nullptr);
         Singleton_->setApi(*Api_);
         Api_->Connect(SocketPath());
+        Engine_->setInitialProperties({{"visible", false}});
         Engine_->loadFromModule("Roost.Shell", "Main");
         QVERIFY(!Engine_->rootObjects().isEmpty());
         Loader_ = std::make_unique<PluginLoader>(*Engine_, Api_->Plugins(),
@@ -268,8 +376,8 @@ public:
                                          *Loader_, *Api_, SocketPath());
         auto* window = qobject_cast<QQuickWindow*>(Root());
         QVERIFY(window != nullptr);
-        QVERIFY(QTest::qWaitForWindowExposed(window));
-        window->resize(WIDTH, HEIGHT);
+        Adopt(window);
+        Window()->resize(WIDTH, HEIGHT);
         QTest::qWait(300);
     }
 
@@ -320,14 +428,21 @@ public:
 
 private slots:
     void initTestCase() {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
         const QString out = qEnvironmentVariable(
             "UI_INVENTORY_OUT", QDir::current().filePath("ui-inventory-out"));
         Out_ = QDir(out);
         QVERIFY(Out_.mkpath("."));
     }
 
-    void init() { Prepare(); }
-    void cleanup() { Teardown(); }
+    void init() {
+        Prepare();
+        Unexposed_ = true;
+    }
+    void cleanup() {
+        Mirror_.reset();
+        Teardown();
+    }
 
     void cleanupTestCase() {
         QFile index(Out_.filePath("capture-log.txt"));
@@ -504,7 +619,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(Terminal()->hasSelection(), TIMEOUT_MS);
         Shot("terminal-selection");
 
-        BackToList();
+        ToList();
         Shot("list-open-session-focus-list");
 
         // An ended session.
@@ -527,7 +642,7 @@ private slots:
         }
         MoveToId("bg-a2");
         OpenCurrent("run the tests");
-        BackToList();
+        ToList();
         Press(Qt::Key_Down);
         Shot("list-open-marker-and-cursor-elsewhere");
         Press(Qt::Key_D);
@@ -654,7 +769,7 @@ private slots:
         }
         MoveToId("bg-a1");
         OpenCurrent("run the tests");
-        BackToList();
+        ToList();
         StopDaemon();
         QTRY_VERIFY_WITH_TIMEOUT(RootText() != QString("connected"),
                                  TIMEOUT_MS);
@@ -668,6 +783,7 @@ private slots:
         QVERIFY(Seed({}));
         QVERIFY(StartDaemon());
         QQmlApplicationEngine engine;
+        engine.setInitialProperties({{"visible", false}});
         engine.loadFromModule("Roost.Shell", "SessionMain");
         QVERIFY(!engine.rootObjects().isEmpty());
         auto* window =
@@ -676,6 +792,8 @@ private slots:
         window->resize(WIDTH, HEIGHT);
         auto* item = window->findChild<TerminalItem*>("terminal");
         QVERIFY(item != nullptr);
+        auto mirror = std::make_unique<Mirror>(window);
+        QVERIFY(mirror->Ready());
         SingleSession controller(item, "claude", "bg-a1");
         QSignalSpy opened(&controller, &SingleSession::Opened);
         controller.Start(SocketPath());
@@ -683,7 +801,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(
             Screen(controller.Session()).contains("run the tests"), TIMEOUT_MS);
         QTest::qWait(500);
-        const QImage image = window->grabWindow();
+        const QImage image = mirror->Grab();
         QVERIFY(!image.isNull());
         const QString file =
             QStringLiteral("%1-session-window-roost-session@%2x.png")
@@ -691,7 +809,8 @@ private slots:
                 .arg(qRound(window->devicePixelRatio()));
         QVERIFY(image.save(Out_.filePath(file)));
         Taken_ << file;
-        // Window and controller go before the daemon.
+        // Mirror, window and controller go before the daemon.
+        mirror.reset();
         QuiesceWindow(window);
     }
 

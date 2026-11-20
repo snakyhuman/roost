@@ -577,12 +577,14 @@ add_dependencies(daemon_restart_test roostd refusing_daemon)
 
 # A one-off screenshot capture of every state of the window (see
 # tests/inventory/ui_inventory.cpp): built on request, not part of ctest.
+# QRhi, which the capture draws into a texture with, is a private Qt header.
+find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 qt_add_executable(ui_inventory EXCLUDE_FROM_ALL inventory/ui_inventory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/helpers/test_environment.cpp)
 target_link_libraries(ui_inventory PRIVATE
     roost_app roost_shell roost_shellplugin roost_qml_api roost_qml_apiplugin
     roost_test_sessions_window roost_test_helpers roost_core
-    Qt6::Test Qt6::Qml Qt6::Quick)
+    Qt6::Test Qt6::Qml Qt6::Quick Qt6::GuiPrivate)
 target_compile_definitions(ui_inventory PRIVATE
     ROOSTD_PATH="$<TARGET_FILE:roostd>"
     FAKE_TUI_PATH="$<TARGET_FILE:fake_tui>"
