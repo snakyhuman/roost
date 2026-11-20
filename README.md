@@ -62,6 +62,13 @@ started from Finder or a desktop menu gives it the `PATH` of your login shell,
 a window started from a terminal gives it that terminal's `PATH`. A `roostd`
 that already runs keeps the `PATH` it was started with.
 
+Each session row shows a pixel-art icon of its agent; a file
+`~/.config/roost/agent-icons/<agent>.svg` or `.png` replaces the icon of that
+agent (`$ROOST_CONFIG/agent-icons/` if `ROOST_CONFIG` is set), and
+`default.svg` or `default.png` there replaces the default icon of the agents
+that have none. A file that fails to load falls back to the bundled icon. The
+panel reads the folder when it is created.
+
 Logs are in the directory of the socket: `roostd.log` (the previous run is
 `roostd.log.1`) and `roostd.start.log` (what `roostd` prints before it holds
 the socket). The window writes its own log next to them: `roost.log`, one line

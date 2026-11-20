@@ -1112,10 +1112,37 @@ FocusScope {
                 text: "●"
             }
 
+            // The icon of the agent of the session, at the left of the title
+            // line; the user's folder agent-icons overrides the bundled one.
+            Image {
+                id: agentIcon
+
+                // The agent whose file of the user failed to load: its row
+                // shows the bundled icon instead of an empty gap.
+                property string failedAgent: ""
+                readonly property bool bundledOnly: !row.isHeader && failedAgent === row.model.agent
+
+                objectName: "agentIcon"
+                visible: !row.isHeader
+                x: 26
+                y: Math.round(6 + (titleText.implicitHeight - height) / 2)
+                width: 16
+                height: 16
+                fillMode: Image.PreserveAspectFit
+                sourceSize.height: 32
+                smooth: false
+                asynchronous: false
+                source: row.isHeader ? "" : bundledOnly ? sessionsList.bundledAgentIcon(row.model.agent) : sessionsList.agentIcon(row.model.agent)
+                onStatusChanged: {
+                    if (status === Image.Error && !row.isHeader && !bundledOnly)
+                        failedAgent = row.model.agent;
+                }
+            }
+
             Column {
                 visible: !row.isHeader
                 anchors.fill: parent
-                anchors.leftMargin: 26
+                anchors.leftMargin: 48
                 anchors.rightMargin: 8
                 anchors.topMargin: 6
 
