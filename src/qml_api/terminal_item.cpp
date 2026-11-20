@@ -847,6 +847,9 @@ int TerminalItem::rowsRebuilt() const { return Renderer_.RowsRebuilt(); }
 
 QSGNode* TerminalItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
     if (!Session_ || window() == nullptr) {
+        // The scene graph forgets oldNode when null comes back but leaves it
+        // in the tree, drawn on, under the next node: delete it here.
+        delete oldNode;
         return nullptr;
     }
     if (PaintLogPending_) {
