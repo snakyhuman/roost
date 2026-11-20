@@ -16,16 +16,33 @@ name: Package
 # (a dry run: the draft is named dryrun-<run id>, no git tag is made, and the
 # draft is deleted after review). Publishing is a manual step.
 #
-# Runs on `v*` tags, on dispatch and on pushes to trunk that change code, not
-# on pull requests: a macOS runner per pull request is too much, and a change
-# to packaging proves itself by the dispatch above. Documentation is the set
-# tools/ci_changes.sh skips. A path filter rather than that script: no job
-# here is a required check, and GitHub does not apply path filters to tags.
+# Runs on `v*` tags, on dispatch and on pushes to trunk that change the
+# packaging, not on pull requests: a macOS runner per pull request is too
+# much, and a change to packaging proves itself by the dispatch above. The
+# path list is the files that rarely change and shape a package or its
+# check; the build and the tests of the code run in ci.yml on every pull
+# request. QML of the plugins and the project version are left out: they
+# change often, and the smoke and the version check of a tag catch them.
+# GitHub does not apply path filters to tags.
 on:
   push:
     tags: ["v*"]
     branches: [trunk]
-    paths-ignore: ["docs/**", ".claude/**", "**.md"]
+    paths:
+      - .github/workflows/package.yml
+      - packaging/**
+      - cmake/Install.cmake
+      - tools/package_*.sh
+      - tools/check_bundle.sh
+      - tools/check_appimage.sh
+      - .github/actions/ccache/**
+      - CMakePresets.json
+      - cmake/ghostty.cmake
+      - licenses/**
+      - LICENSE
+      - NOTICE
+      - THIRD_PARTY_LICENSES
+      - tests/fixtures/claude_agents.json
   workflow_dispatch:
     inputs:
       draft_release:
