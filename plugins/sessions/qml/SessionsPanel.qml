@@ -541,7 +541,28 @@ FocusScope {
         }
     }
 
-    // x archives and stops; in the archive view it restores, at once.
+    // Commands are optional contributions, independent of terminal support.
+    function agentsWithCommand(verb, callback) {
+        Roost.call("plugins.list", {}, (error, result) => {
+            if (error) {
+                showNotice(failure(error));
+                return;
+            }
+            const suffix = "." + verb;
+            const agents = new Set();
+            for (const plugin of result.plugins) {
+                for (const command of (plugin.contributes ?? {}).commands ?? []) {
+                    if (command.id.endsWith(suffix)) {
+                        agents.add(command.id.slice(0, -suffix.length));
+                    }
+                }
+            }
+            callback(agents);
+        });
+    }
+
+    // x archives a row in Roost and stops it if the adapter can do that.
+    // In the archive view it restores the row at once.
     function askArchive() {
         const ref = cursorRef();
         if (ref === null) {
@@ -552,19 +573,24 @@ FocusScope {
             return;
         }
         const title = titleOf(ref);
-        confirm = {
-            "action": "archive",
-            "ref": ref,
-            "title": title,
-            "text": "Archive and stop \"" + title + "\"? (y: yes, any other key: no)"
-        };
+        agentsWithCommand("stop", agents => {
+            const stop = agents.has(ref.agent);
+            confirm = {
+                "action": "archive",
+                "ref": ref,
+                "title": title,
+                "stop": stop,
+                "text": (stop ? "Archive and stop " : "Archive ") + "\"" + title + "\"? (y: yes, any other key: no)"
+            };
+        });
     }
 
-    function runningCount() {
+    function runningCount(agents) {
         let count = 0;
         const rows = Roost.sessions.rowCount();
         for (let row = 0; row < rows; ++row) {
-            if (Roost.sessions.data(Roost.sessions.index(row, 0), Qt.UserRole + 4) === "working") {
+            const index = Roost.sessions.index(row, 0);
+            if (agents.has(Roost.sessions.data(index, Qt.UserRole)) && Roost.sessions.data(index, Qt.UserRole + 4) === "working") {
                 ++count;
             }
         }
@@ -585,15 +611,17 @@ FocusScope {
     }
 
     function askRespawnAll() {
-        const agents = listedAgents();
-        if (agents.length === 0) {
-            return;
-        }
-        confirm = {
-            "action": "respawnAll",
-            "agents": agents,
-            "text": "Respawn all sessions (" + runningCount() + " running)? (y: yes, any other key: no)"
-        };
+        agentsWithCommand("respawnAll", supported => {
+            const agents = listedAgents().filter(agent => supported.has(agent));
+            if (agents.length === 0) {
+                return;
+            }
+            confirm = {
+                "action": "respawnAll",
+                "agents": agents,
+                "text": "Respawn all sessions (" + runningCount(supported) + " running)? (y: yes, any other key: no)"
+            };
+        });
     }
 
     function runConfirmed(asked) {
@@ -602,7 +630,7 @@ FocusScope {
             deleteSession(asked.ref, asked.title);
             break;
         case "archive":
-            archiveSession(asked.ref, asked.title);
+            archiveSession(asked.ref, asked.title, asked.stop);
             break;
         case "respawn":
             respawnSession(asked.ref, asked.title);
@@ -653,10 +681,14 @@ FocusScope {
     }
 
     // Archived at once; a failed stop leaves it archived and says so.
-    function archiveSession(ref, title) {
+    function archiveSession(ref, title, stop) {
         sessionsList.setArchived(ref, true);
         if (isSame(selected, ref)) {
             selected = null;
+        }
+        if (!stop) {
+            showNotice("\"" + title + "\" archived");
+            return;
         }
         showNotice("Stopping…");
         runCommand(ref.agent, "stop", {

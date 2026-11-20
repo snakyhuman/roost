@@ -1,5 +1,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
+add_subdirectory(../plugins/codex/tests codex_adapter)
+
 # Tests never touch the real ~/.config/roost or another program's config, and
 # leave no QML disk cache behind in the user's cache directory.
 set(ROOST_TEST_ENVIRONMENT
@@ -527,9 +529,10 @@ target_compile_definitions(install_layout_test PRIVATE
     PROJECT_VERSION_STRING="${PROJECT_VERSION}"
     QT_RUN_PATH="${ROOST_TEST_QT_RUN_PATH}"
     CLAUDE_ADAPTER_FILE="$<TARGET_FILE_NAME:claude-adapter>"
+    CODEX_ADAPTER_FILE="$<TARGET_FILE_NAME:codex-adapter>"
     SESSIONS_MODULE_FILE="$<TARGET_FILE_NAME:sessions_qml>"
     FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-add_dependencies(install_layout_test roost roostd claude-adapter sessions_qml)
+add_dependencies(install_layout_test roost roostd claude-adapter codex-adapter sessions_qml)
 
 # `roost --smoke-sessions` as a process: the real roostd with the built-in
 # plugins behind a fake `claude`; a sessions plugin without its QML module and
