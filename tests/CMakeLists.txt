@@ -574,3 +574,18 @@ target_compile_definitions(daemon_restart_test PRIVATE
     ROOSTD_PATH="$<TARGET_FILE:roostd>"
     REFUSING_DAEMON_PATH="$<TARGET_FILE:refusing_daemon>")
 add_dependencies(daemon_restart_test roostd refusing_daemon)
+
+# A one-off screenshot capture of every state of the window (see
+# tests/inventory/ui_inventory.cpp): built on request, not part of ctest.
+qt_add_executable(ui_inventory EXCLUDE_FROM_ALL inventory/ui_inventory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/helpers/test_environment.cpp)
+target_link_libraries(ui_inventory PRIVATE
+    roost_app roost_shell roost_shellplugin roost_qml_api roost_qml_apiplugin
+    roost_test_sessions_window roost_test_helpers roost_core
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(ui_inventory PRIVATE
+    ROOSTD_PATH="$<TARGET_FILE:roostd>"
+    FAKE_TUI_PATH="$<TARGET_FILE:fake_tui>"
+    FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    ROOST_PLUGINS_DIR="${PROJECT_BINARY_DIR}/roost-plugins")
+add_dependencies(ui_inventory roostd fake_tui claude-adapter sessions_qml)
