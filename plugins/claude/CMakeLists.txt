@@ -9,7 +9,7 @@ add_library(claude_adapter_lib STATIC
     backend/claude_run.cpp
 )
 target_include_directories(claude_adapter_lib PUBLIC ${PROJECT_SOURCE_DIR}/plugins)
-target_link_libraries(claude_adapter_lib PUBLIC roost_plugin_rpc)
+target_link_libraries(claude_adapter_lib PUBLIC roost_plugin_backend)
 
 qt_add_executable(claude-adapter backend/main.cpp)
 target_link_libraries(claude-adapter PRIVATE claude_adapter_lib Qt6::Core)

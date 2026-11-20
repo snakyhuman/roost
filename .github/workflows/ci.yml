@@ -198,25 +198,6 @@ jobs:
           path: ${{ runner.temp }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
 
-  codex-adapter-windows:
-    name: Codex adapter (Windows)
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jurplel/install-qt-action@v4
-        with:
-          version: ${{ env.QT_VERSION }}
-          arch: win64_msvc2022_64
-          cache: true
-      - name: Build and test the adapter
-        working-directory: plugins/codex
-        run: |
-          cmake --preset windows
-          cmake --build --preset windows
-          ctest --preset windows
-
   format:
     name: format
     needs: changes

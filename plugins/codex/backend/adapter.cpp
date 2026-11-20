@@ -10,12 +10,15 @@
 #include <limits>
 #include <utility>
 
+#include "common/backend_process.hpp"
+
 namespace roost::codex {
 
 namespace {
 
 constexpr QLatin1StringView AGENT{"codex"};
 constexpr int PAGE_SIZE = 100;
+constexpr qsizetype MAX_TITLE_LENGTH = 200;
 constexpr qsizetype MAX_LINE_LENGTH = 16LL * 1024 * 1024;
 
 jsonrpc::Result InvalidParams(const QString& message) {
@@ -43,8 +46,16 @@ QJsonObject Session(const QJsonObject& thread, const QString& id) {
     if (title.isEmpty()) {
         title = thread.value("preview").toString().simplified();
     }
-    QJsonObject row{
-        {"id", id}, {"title", title.isEmpty() ? id : title}, {"state", "idle"}};
+    if (title.isEmpty()) {
+        title = id;
+    }
+    if (title.size() > MAX_TITLE_LENGTH) {
+        // Truncate between characters, including surrogate pairs.
+        title.truncate(
+            MAX_TITLE_LENGTH -
+            (title.at(MAX_TITLE_LENGTH - 1).isHighSurrogate() ? 1 : 0));
+    }
+    QJsonObject row{{"id", id}, {"title", title}, {"state", "idle"}};
     const QString cwd = thread.value("cwd").toString();
     if (!cwd.isEmpty()) {
         row.insert("cwd", cwd);
@@ -88,6 +99,9 @@ Adapter::Adapter(QString program, std::chrono::milliseconds pollInterval,
     Q_ASSERT(registered);
     Q_UNUSED(registered);
 
+    Process_.setUnixProcessParameters(
+        QProcess::UnixProcessFlag::CreateNewSession |
+        QProcess::UnixProcessFlag::ResetSignalHandlers);
     PollTimer_.setSingleShot(true);
     TimeoutTimer_.setSingleShot(true);
     connect(&PollTimer_, &QTimer::timeout, this, &Adapter::Poll);
@@ -140,7 +154,6 @@ void Adapter::Poll() {
     PendingRows_ = {};
     Cursors_.clear();
     if (Process_.state() == QProcess::Running) {
-        TimeoutTimer_.start(Timeout_);
         RequestPage();
         return;
     }
@@ -191,6 +204,7 @@ void Adapter::HandleReply(const QJsonObject& reply) {
         return;
     }
     PendingId_.reset();
+    TimeoutTimer_.stop();
     if (!reply.value("result").isObject()) {
         const QString message = reply.value("error")
                                     .toObject()
@@ -214,6 +228,7 @@ void Adapter::HandleReply(const QJsonObject& reply) {
 
 void Adapter::Request(const QString& method, const QJsonObject& params) {
     PendingId_ = ++NextRequestId_;
+    TimeoutTimer_.start(Timeout_);
     Process_.write(
         Line({{"id", *PendingId_}, {"method", method}, {"params", params}}));
 }
@@ -232,9 +247,9 @@ void Adapter::RequestPage(const QString& cursor) {
 void Adapter::HandlePage(const QJsonObject& page) {
     const QJsonValue rows = page.value("data");
     const QJsonValue cursor = page.value("nextCursor");
+    const bool lastPage = cursor.isNull() || cursor.isUndefined();
     if (!rows.isArray() ||
-        (!cursor.isNull() &&
-         (!cursor.isString() || cursor.toString().isEmpty()))) {
+        (!lastPage && (!cursor.isString() || cursor.toString().isEmpty()))) {
         Fail("codex app-server sent an invalid thread/list page");
         return;
     }
@@ -242,8 +257,8 @@ void Adapter::HandlePage(const QJsonObject& page) {
         const QJsonObject thread = value.toObject();
         const QString id = thread.value("id").toString();
         if (!IsSessionId(id)) {
-            Fail("codex app-server returned a thread with an invalid id");
-            return;
+            qWarning("codex app-server: skipping a thread with an invalid id");
+            continue;
         }
         if (!thread.value("ephemeral").toBool() &&
             !PendingSessions_.contains(id)) {
@@ -252,7 +267,7 @@ void Adapter::HandlePage(const QJsonObject& page) {
             PendingRows_.append(row);
         }
     }
-    if (cursor.isNull()) {
+    if (lastPage) {
         Publish();
         return;
     }
@@ -271,7 +286,7 @@ void Adapter::Publish() {
         for (const QJsonValue& value : PendingRows_) {
             const QJsonObject row = value.toObject();
             const QString id = row.value("id").toString();
-            if (!Error_.isEmpty() || Sessions_.value(id) != row) {
+            if (Sessions_.value(id) != row) {
                 Notify("session.stateChanged", row);
             }
         }
@@ -296,10 +311,7 @@ void Adapter::Fail(const QString& reason) {
 
 void Adapter::StopProcess() {
     const QSignalBlocker block(&Process_);
-    if (Process_.state() != QProcess::NotRunning) {
-        Process_.kill();
-        Process_.waitForFinished(500);
-    }
+    plugin::StopRun(Process_);
     Buffer_.clear();
     Process_.readAllStandardOutput();
     Process_.readAllStandardError();
@@ -348,16 +360,19 @@ jsonrpc::Result Adapter::Answer(const QString& sessionId) const {
     if (row == Sessions_.cend()) {
         return QJsonValue(QJsonValue::Null);
     }
+    QJsonObject command{{"program", Executable_},
+                        {"args", QJsonArray{"resume", sessionId}}};
     const QString cwd = row->value("cwd").toString();
-    if (!QDir::isAbsolutePath(cwd) || !QFileInfo(cwd).isDir() ||
-        cwd.contains(QChar::Null)) {
-        return Failed(
-            QStringLiteral("the Codex working directory is unavailable: %1")
-                .arg(cwd));
+    if (!cwd.isEmpty()) {
+        if (!QDir::isAbsolutePath(cwd) || cwd.contains(QChar::Null) ||
+            !QFileInfo(cwd).isDir()) {
+            return Failed(
+                QStringLiteral("the Codex working directory is unavailable: %1")
+                    .arg(cwd));
+        }
+        command.insert("cwd", cwd);
     }
-    return QJsonValue(QJsonObject{{"program", Executable_},
-                                  {"args", QJsonArray{"resume", sessionId}},
-                                  {"cwd", cwd}});
+    return QJsonValue(command);
 }
 
 }  // namespace roost::codex

@@ -1,7 +1,5 @@
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
-add_subdirectory(../plugins/codex/tests codex_adapter)
-
 # Tests never touch the real ~/.config/roost or another program's config, and
 # leave no QML disk cache behind in the user's cache directory.
 set(ROOST_TEST_ENVIRONMENT
@@ -197,6 +195,12 @@ set_tests_properties(roostd_version PROPERTIES
     PASS_REGULAR_EXPRESSION "^roostd ${PROJECT_VERSION} \\(libghostty-vt ${_ghostty_vt_version_regex}[^)]*\\)"
 )
 
+# The Codex adapter over stdio, using the test binary as a fake App Server.
+roost_add_qt_test(codex_adapter_test plugins/codex_adapter_test.cpp)
+target_compile_definitions(codex_adapter_test PRIVATE
+    CODEX_ADAPTER_PATH="$<TARGET_FILE:codex-adapter>")
+add_dependencies(codex_adapter_test codex-adapter)
+
 # The Claude adapter: its parsing, then the real binary over stdio.
 roost_add_qt_test(claude_adapter_test plugins/claude_adapter_test.cpp claude_adapter_lib)
 target_compile_definitions(claude_adapter_test PRIVATE
@@ -364,10 +368,11 @@ roost_add_qt_test(sessions_commands_test roost/sessions_commands_test.cpp
     roost_test_sessions_window roost_test_helpers Qt6::Qml Qt6::Quick)
 target_compile_definitions(sessions_commands_test PRIVATE
     ROOSTD_PATH="$<TARGET_FILE:roostd>"
+    FAKE_CODEX_PATH="$<TARGET_FILE:codex_adapter_test>"
     FAKE_TUI_PATH="$<TARGET_FILE:fake_tui>"
     FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     ROOST_PLUGINS_DIR="${PROJECT_BINARY_DIR}/roost-plugins")
-add_dependencies(sessions_commands_test roostd fake_tui claude-adapter sessions_qml)
+add_dependencies(sessions_commands_test roostd fake_tui claude-adapter codex_adapter_test sessions_qml)
 
 # The prompt of the sessions panel's footer: search, category and name.
 roost_add_qt_test(sessions_prompt_test roost/sessions_prompt_test.cpp

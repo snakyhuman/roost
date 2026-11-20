@@ -2,7 +2,7 @@
   "id": "codex",
   "version": "0.1.0",
   "api": "0",
-  "backend": { "command": ["backend/codex-adapter@CMAKE_EXECUTABLE_SUFFIX@"] },
+  "backend": { "command": ["backend/codex-adapter"] },
   "contributes": {
     "agents": [{ "id": "codex", "capabilities": ["nativeTuiAttach"] }]
   }

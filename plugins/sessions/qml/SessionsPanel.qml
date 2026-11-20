@@ -452,7 +452,7 @@ FocusScope {
                 return false;
             }
             if (act) {
-                askForSession("delete", "Delete");
+                askForSession("delete", "remove", "Delete");
             }
             return true;
         case Qt.Key_X:
@@ -468,7 +468,7 @@ FocusScope {
                 if (shift) {
                     askRespawnAll();
                 } else {
-                    askForSession("respawn", "Respawn");
+                    askForSession("respawn", "respawn", "Respawn");
                 }
             }
             return true;
@@ -527,23 +527,33 @@ FocusScope {
         };
     }
 
-    // d and r ask about the session under the cursor.
-    function askForSession(action, verb) {
+    // d and r ask only when the agent under the cursor offers the command.
+    function askForSession(action, verb, label) {
         const ref = cursorRef();
-        if (ref !== null) {
-            const title = titleOf(ref);
+        if (ref === null) {
+            return;
+        }
+        const title = titleOf(ref);
+        agentsWithCommand(verb, agents => {
+            if (!agents.has(ref.agent)) {
+                showNotice(label + " unavailable for " + ref.agent);
+                return;
+            }
             confirm = {
                 "action": action,
                 "ref": ref,
                 "title": title,
-                "text": verb + " \"" + title + "\"? (y: yes, any other key: no)"
+                "text": label + " \"" + title + "\"? (y: yes, any other key: no)"
             };
-        }
+        });
     }
 
     // Commands are optional contributions, independent of terminal support.
     function agentsWithCommand(verb, callback) {
         Roost.call("plugins.list", {}, (error, result) => {
+            if (confirm !== null || promptKind !== "") {
+                return;
+            }
             if (error) {
                 showNotice(failure(error));
                 return;
@@ -738,73 +748,51 @@ FocusScope {
         }
     }
 
-    // n: the Task prompt. The agent, the directory and the category are taken
-    // now, from the cursor, so that a poll while the user types does not
-    // change them. A header gives its category; the directory is that of the
-    // session under the cursor, else the home directory.
+    // n takes the directory and category from the cursor. Prefer the cursor's
+    // agent for the task, then the first agent that can start a session.
     function openNewSessionPrompt() {
-        const ref = sessionsList.cursorSession;
+        const ref = cursorRef();
         const data = ref === null ? null : sessionData(ref);
         const category = sessionsList.cursorCategory;
-        promptNew = {
-            "agent": ref === null ? "" : ref.agent,
-            "cwd": data && data.cwd ? data.cwd : homeDirectory(),
-            "category": category === null ? "" : category,
-            "task": ""
-        };
-        openPrompt("task", null, "");
+        const cwd = data && data.cwd ? data.cwd : homeDirectory();
+        agentsWithCommand("newSession", agents => {
+            if (agents.size === 0) {
+                showNotice("No agent can start a session");
+                return;
+            }
+            const agent = ref !== null && agents.has(ref.agent) ? ref.agent : agents.values().next().value;
+            promptNew = {
+                "agent": agent,
+                "cwd": cwd,
+                "category": category === null ? "" : category,
+                "task": ""
+            };
+            openPrompt("task", null, "");
+        });
     }
 
     function homeDirectory() {
         return decodeURIComponent(StandardPaths.writableLocation(StandardPaths.HomeLocation).toString().replace(/^file:\/\//, ""));
     }
 
-    // The agent that starts the session: the one of the session under the
-    // cursor, else the first plugin, in the order roostd loaded them, that has
-    // a command `<agent>.newSession`. callback(agent), "" if there is none.
-    function newSessionAgent(agent, callback) {
-        if (agent !== "") {
-            callback(agent);
-            return;
-        }
-        Roost.call("plugins.list", {}, (error, result) => {
-            const suffix = ".newSession";
-            for (const plugin of error ? [] : result.plugins) {
-                for (const command of (plugin.contributes ?? {}).commands ?? []) {
-                    if (command.id.endsWith(suffix)) {
-                        callback(command.id.slice(0, command.id.length - suffix.length));
-                        return;
-                    }
-                }
-            }
-            callback("");
-        });
-    }
-
     function startSession(agent, cwd, task, category) {
         showNotice("Starting…");
-        newSessionAgent(agent, name => {
-            if (name === "") {
-                showNotice("Not started: no agent can start a session");
+        runCommand(agent, "newSession", {
+            "cwd": cwd,
+            "prompt": task
+        }, (error, result) => {
+            if (error) {
+                showNotice("Not started: " + failure(error));
                 return;
             }
-            runCommand(name, "newSession", {
-                "cwd": cwd,
-                "prompt": task
-            }, (error, result) => {
-                if (error) {
-                    showNotice("Not started: " + failure(error));
-                    return;
-                }
-                const ref = {
-                    "agent": result.agent,
-                    "id": result.id
-                };
-                showNotice("\"" + result.title + "\" started");
-                if (category !== "") {
-                    sessionsList.setCategory(ref, category);
-                }
-            });
+            const ref = {
+                "agent": result.agent,
+                "id": result.id
+            };
+            showNotice("\"" + result.title + "\" started");
+            if (category !== "") {
+                sessionsList.setCategory(ref, category);
+            }
         });
     }
 
@@ -1182,6 +1170,7 @@ FocusScope {
                     id: titleText
 
                     objectName: "sessionTitle"
+                    textFormat: Text.PlainText
                     width: parent.width
                     elide: Text.ElideRight
                     color: row.isHeader ? root.textColor : root.stateColor(row.model.state)
@@ -1193,6 +1182,7 @@ FocusScope {
                     id: detailText
 
                     objectName: "sessionDetail"
+                    textFormat: Text.PlainText
                     width: parent.width
                     visible: row.showsDetail
                     elide: Text.ElideMiddle
@@ -1244,6 +1234,7 @@ FocusScope {
         id: unavailable
 
         objectName: "sessionsUnavailable"
+        textFormat: Text.PlainText
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: footer.top
@@ -1283,6 +1274,7 @@ FocusScope {
         // A command that waits for y.
         Text {
             objectName: "sessionsConfirm"
+            textFormat: Text.PlainText
             width: parent.width
             leftPadding: 8
             rightPadding: 8
@@ -1387,6 +1379,7 @@ FocusScope {
         // The outcome of a command, for `noticeMs`.
         Text {
             objectName: "sessionsNotice"
+            textFormat: Text.PlainText
             width: parent.width
             leftPadding: 8
             rightPadding: 8
