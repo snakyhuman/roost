@@ -591,3 +591,19 @@ target_compile_definitions(ui_inventory PRIVATE
     FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     ROOST_PLUGINS_DIR="${PROJECT_BINARY_DIR}/roost-plugins")
 add_dependencies(ui_inventory roostd fake_tui claude-adapter sessions_qml)
+
+# A repro of "the terminal does not redraw when sessions are switched" (see
+# tests/inventory/session_switch_repro.cpp): built on request, not in ctest.
+qt_add_executable(session_switch_repro EXCLUDE_FROM_ALL
+    inventory/session_switch_repro.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/helpers/test_environment.cpp)
+target_link_libraries(session_switch_repro PRIVATE
+    roost_app roost_shell roost_shellplugin roost_qml_api roost_qml_apiplugin
+    roost_test_sessions_window roost_test_helpers roost_core
+    Qt6::Test Qt6::Qml Qt6::Quick Qt6::GuiPrivate)
+target_compile_definitions(session_switch_repro PRIVATE
+    ROOSTD_PATH="$<TARGET_FILE:roostd>"
+    FAKE_TUI_PATH="$<TARGET_FILE:fake_tui>"
+    FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    ROOST_PLUGINS_DIR="${PROJECT_BINARY_DIR}/roost-plugins")
+add_dependencies(session_switch_repro roostd fake_tui claude-adapter sessions_qml)
